@@ -33,5 +33,5 @@ jobs:
           context: .
           push: true
           tags: |
-            ghcr.io/${{ github.repository_owner }}/geo-activity-playground:latest
+            ghcr.io/md0005/geo-activity-playground:latest
           platforms: linux/arm64
