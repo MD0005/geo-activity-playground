@@ -1,0 +1,64 @@
+name: Sync upstream and build image
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "30 2 * * *" # codziennie 02:30 UTC, czyli 04:30 w Polsce latem
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  sync-and-build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout fork
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Sync from upstream
+        id: sync
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git remote add upstream https://github.com/martin-ueding/geo-activity-playground.git
+          git fetch upstream main
+
+          BEFORE=$(git rev-parse HEAD)
+
+          git merge --no-edit upstream/main
+
+          AFTER=$(git rev-parse HEAD)
+
+          if [ "$BEFORE" != "$AFTER" ]; then
+            git push origin HEAD:main
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Set up Docker Buildx
+        if: steps.sync.outputs.changed == 'true' || github.event_name == 'workflow_dispatch'
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        if: steps.sync.outputs.changed == 'true' || github.event_name == 'workflow_dispatch'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        if: steps.sync.outputs.changed == 'true' || github.event_name == 'workflow_dispatch'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ghcr.io/md0005/geo-activity-playground:latest
+          platforms: linux/arm64
