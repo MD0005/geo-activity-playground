@@ -1,5 +1,6 @@
 import atexit
 import datetime
+import html
 import importlib
 import importlib.metadata
 import json
@@ -18,12 +19,14 @@ from collections.abc import Iterable
 from typing import Any, Literal
 from wsgiref.types import StartResponse, WSGIApplication, WSGIEnvironment
 
+import markdown
 import pandas as pd
 import sqlalchemy
 import waitress
 from flask import Flask, request
 from flask_alembic import Alembic
 from flask_babel import Babel
+from markupsafe import Markup
 
 from ..core.activities import ActivityRepository
 from ..core.config import (
@@ -40,6 +43,7 @@ from ..core.datamodel import (
     Kind,
     Photo,
     Tag,
+    get_hammerhead_auth,
 )
 from ..core.heart_rate import HeartRateZoneComputer
 from ..core.heatmap_cache import (
@@ -150,6 +154,37 @@ def _migrate_null_activity_fields_to_unknown(config: Config) -> None:
     DB.session.commit()
 
 
+def _migrate_hammerhead_credentials_to_db() -> None:
+    config_path = pathlib.Path("config.json")
+    if not config_path.exists():
+        return
+    with open(config_path) as f:
+        raw = json.load(f)
+    old_fields = {
+        "hammerhead_client_id",
+        "hammerhead_client_secret",
+        "hammerhead_client_code",
+    }
+    if not any(k in raw for k in old_fields):
+        return
+    client_id: str | None = raw.get("hammerhead_client_id")
+    client_secret: str | None = raw.get("hammerhead_client_secret")
+    client_code: str | None = raw.get("hammerhead_client_code")
+    auth = get_hammerhead_auth()
+    if client_id and not auth.client_id:
+        auth.client_id = client_id
+    if client_secret and not auth.client_secret:
+        auth.client_secret = client_secret
+    if client_code and not auth.client_code:
+        auth.client_code = client_code
+    DB.session.commit()
+    for key in old_fields:
+        raw.pop(key, None)
+    with open(config_path, "w") as f:
+        json.dump(raw, f, ensure_ascii=False, indent=2, sort_keys=True)
+    logger.info("Migrated Hammerhead credentials from config.json to database.")
+
+
 def get_secret_key():
     secret_file = pathlib.Path("Cache/flask-secret.json")
     if secret_file.exists():
@@ -251,7 +286,7 @@ def create_app(
         import_legacy_heatmap_cache_from_filesystem()
         delete_small_heatmap_cache_entries(config.heatmap_cache_min_activities)
 
-    authenticator = Authenticator(config)
+    authenticator = Authenticator(config_accessor)
     tile_getter = TileGetter(config.map_tile_url)
     image_transforms = {
         "color": IdentityImageTransform(),
@@ -261,7 +296,7 @@ def create_app(
         "blank": BlankImageTransform(),
     }
     flasher = FlaskFlasher()
-    heart_rate_zone_computer = HeartRateZoneComputer(config)
+    heart_rate_zone_computer = HeartRateZoneComputer(config_accessor)
 
     # Register template filters
     @app.template_filter()
@@ -295,14 +330,21 @@ def create_app(
     def isna(value):
         return pd.isna(value)
 
+    @app.template_filter()
+    def render_markdown(text: str | None) -> Markup:
+        if not text:
+            return Markup("")
+        escaped = html.escape(text, quote=False)
+        return Markup(markdown.markdown(escaped, extensions=["nl2br"]))
+
     # Register routes and blueprints
-    register_entry_views(app, repository, config)
+    register_entry_views(app, repository, config_accessor)
 
     blueprints = {
         "/activity": make_activity_blueprint(
             repository,
             authenticator,
-            config,
+            config_accessor,
             heart_rate_zone_computer,
         ),
         "/admin": make_admin_blueprint(
@@ -310,19 +352,20 @@ def create_app(
         ),
         "/auth": make_auth_blueprint(authenticator),
         "/bubble-chart": make_bubble_chart_blueprint(repository),
-        "/calendar": make_calendar_blueprint(repository, config),
+        "/calendar": make_calendar_blueprint(repository, config_accessor),
         "/eddington": register_eddington_blueprint(repository, authenticator),
-        "/equipment": make_equipment_blueprint(repository, config),
+        "/equipment": make_equipment_blueprint(repository, config_accessor),
         "/explorer": make_explorer_blueprint(
             authenticator,
             config_accessor,
             tile_getter,
             image_transforms,
-            config,
         ),
         "/export": make_export_blueprint(authenticator),
-        "/hall-of-fame": make_hall_of_fame_blueprint(repository, authenticator, config),
-        "/heatmap": make_heatmap_blueprint(repository, config, authenticator),
+        "/hall-of-fame": make_hall_of_fame_blueprint(
+            repository, authenticator, config_accessor
+        ),
+        "/heatmap": make_heatmap_blueprint(repository, config_accessor, authenticator),
         "/photo": make_photo_blueprint(config_accessor, authenticator, flasher),
         "/plot-builder": make_plot_builder_blueprint(
             repository, flasher, authenticator
@@ -330,12 +373,14 @@ def create_app(
         "/settings": make_settings_blueprint(
             config_accessor, authenticator, flasher, repository
         ),
-        "/segments": make_segments_blueprint(authenticator, flasher, config),
+        "/segments": make_segments_blueprint(authenticator, flasher, config_accessor),
         "/square-planner": make_square_planner_blueprint(),
-        "/search": make_search_blueprint(authenticator, config),
-        "/summary": make_summary_blueprint(repository, config, authenticator),
+        "/search": make_search_blueprint(authenticator, config_accessor),
+        "/summary": make_summary_blueprint(repository, config_accessor, authenticator),
         "/tile": make_tile_blueprint(image_transforms, tile_getter),
-        "/upload": make_upload_blueprint(repository, config, authenticator, flasher),
+        "/upload": make_upload_blueprint(
+            repository, config_accessor, authenticator, flasher
+        ),
     }
 
     for url_prefix, blueprint in blueprints.items():
@@ -349,6 +394,8 @@ def create_app(
             "num_activities": len(repository),
             "map_tile_attribution": config_accessor().map_tile_attribution,
             "request_url": urllib.parse.quote_plus(request.url),
+            "explorer_zoom_levels": sorted(config_accessor().explorer_zoom_levels)
+            or [14],
         }
         variables["equipments_avail"] = DB.session.scalars(
             sqlalchemy.select(Equipment).order_by(Equipment.name)
@@ -407,6 +454,10 @@ def web_ui_main(
     config_accessor = ConfigAccessor()
     import_old_config(config_accessor)
     import_old_strava_config(config_accessor)
+
+    # Migrate Hammerhead credentials from config.json to database
+    with app.app_context():
+        _migrate_hammerhead_credentials_to_db()
 
     # Migrate time series files to new UUID-based naming
     with app.app_context():

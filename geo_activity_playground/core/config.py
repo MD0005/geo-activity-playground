@@ -45,12 +45,10 @@ class Config:
     )
     reliable_elevation_measurements: bool = True
     sharepic_suppressed_fields: list[str] = dataclasses.field(default_factory=list)
+    show_progress_markers: bool = True
     strava_client_id: int = 0
     strava_client_secret: str = ""
     strava_client_code: str | None = None
-    hammerhead_client_id: str | None = None
-    hammerhead_client_secret: str | None = None
-    hammerhead_client_code: str | None = None
     time_diff_threshold_seconds: int | None = 30
     upload_password: str | None = None
     visible_table_columns: list[str] = dataclasses.field(
@@ -68,6 +66,7 @@ class Config:
     heatmap_cache_min_activities: int = 5
     map_tile_url: str = "https://tile.openstreetmap.org/{zoom}/{x}/{y}.png"
     map_tile_attribution: str = '&copy; <a href="http://www.openstreetmap.org/copyright">OpenStreetMap</a> | <a href="https://www.openstreetmap.org/fixthemap">Correct Map</a>'
+    map_style_url: str | None = None
 
 
 # Field names that are valid for Config, used to filter out obsolete fields when loading
@@ -76,20 +75,33 @@ _CONFIG_FIELDS = {f.name for f in dataclasses.fields(Config)}
 
 class ConfigAccessor:
     def __init__(self) -> None:
-        if new_config_file().exists():
-            with open(new_config_file()) as f:
-                data = json.load(f)
-            # Filter out unknown fields to handle old config files with obsolete fields
-            filtered_data = {k: v for k, v in data.items() if k in _CONFIG_FIELDS}
-            self._config = Config(**filtered_data)
-        else:
-            self._config = Config()
+        self._config = Config()
+        self._mtime_ns: int | None = None
+        self._reload_if_changed()
+
+    def _reload_if_changed(self) -> None:
+        path = new_config_file()
+        if not path.exists():
+            return
+        mtime_ns = path.stat().st_mtime_ns
+        if self._mtime_ns is not None and mtime_ns <= self._mtime_ns:
+            return
+        with open(path) as f:
+            data = json.load(f)
+        # Filter out unknown fields to handle old config files with obsolete fields
+        filtered_data = {k: v for k, v in data.items() if k in _CONFIG_FIELDS}
+        # Reassign (atomic under the GIL) so an in-flight request keeps a
+        # consistent view while other processes' writes are picked up here.
+        self._config = Config(**filtered_data)
+        self._mtime_ns = mtime_ns
 
     def __call__(self) -> Config:
+        self._reload_if_changed()
         return self._config
 
     def save(self) -> None:
-        with open(new_config_file(), "w") as f:
+        path = new_config_file()
+        with open(path, "w") as f:
             json.dump(
                 dataclasses.asdict(self._config),
                 f,
@@ -97,6 +109,8 @@ class ConfigAccessor:
                 indent=2,
                 sort_keys=True,
             )
+        # Record our own write so we don't immediately reload it.
+        self._mtime_ns = path.stat().st_mtime_ns
 
 
 @functools.cache

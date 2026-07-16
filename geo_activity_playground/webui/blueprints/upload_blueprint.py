@@ -12,8 +12,8 @@ from flask import (
 )
 
 from ...core.activities import ActivityRepository
-from ...core.config import Config
-from ...core.datamodel import DB, Activity, Segment
+from ...core.config import Config, ConfigAccessor
+from ...core.datamodel import DB, Activity, HammerheadAuth, Segment
 from ...core.segments import find_matches
 from ...explorer.tile_visits import (
     compute_tile_evolution,
@@ -30,7 +30,7 @@ from ..flasher import Flasher, FlashTypes
 
 def make_upload_blueprint(
     repository: ActivityRepository,
-    config: Config,
+    config_accessor: ConfigAccessor,
     authenticator: Authenticator,
     flasher: Flasher,
 ) -> Blueprint:
@@ -83,7 +83,7 @@ def make_upload_blueprint(
             file.save(target_path)
         scan_for_activities(
             repository,
-            config,
+            config_accessor(),
             skip_strava=True,
             skip_hammerhead=True,
         )
@@ -102,7 +102,7 @@ def make_upload_blueprint(
     @blueprint.route("/execute-reload")
     @needs_authentication(authenticator)
     def execute_reload():
-        scan_for_activities(repository, config)
+        scan_for_activities(repository, config_accessor())
         flash("Scanned for new activities.", category="success")
         return redirect(url_for("index"))
 
@@ -126,7 +126,8 @@ def scan_for_activities(
         import_from_strava_checkout(config)
     if config.strava_client_code and not skip_strava:
         import_from_strava_api(config, repository, strava_begin, strava_end)
-    if config.hammerhead_client_code and not skip_hammerhead:
+    hammerhead_auth = DB.session.scalar(sqlalchemy.select(HammerheadAuth).limit(1))
+    if hammerhead_auth and hammerhead_auth.client_code and not skip_hammerhead:
         import_from_hammerhead_api(
             config,
             repository,

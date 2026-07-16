@@ -4,6 +4,7 @@ import functools
 import hashlib
 import io
 import itertools
+import json
 import logging
 import pathlib
 from types import SimpleNamespace
@@ -15,6 +16,7 @@ import matplotlib
 import matplotlib.pyplot as pl
 import numpy as np
 import pandas as pd
+import requests
 import sqlalchemy
 from flask import (
     Blueprint,
@@ -347,7 +349,6 @@ def make_explorer_blueprint(
     config_accessor: ConfigAccessor,
     tile_getter: TileGetter,
     image_transforms: dict[str, ImageTransform],
-    config: Config,
 ) -> Blueprint:
     blueprint = Blueprint("explorer", __name__, template_folder="templates")
 
@@ -550,8 +551,60 @@ def make_explorer_blueprint(
             )
         return redirect(url_for(".video", zoom=zoom))
 
+    @blueprint.after_request
+    def add_cors_headers(response: Response) -> Response:
+        response.headers["Access-Control-Allow-Origin"] = "*"
+        return response
+
+    @blueprint.route("/<int:zoom>/style.json")
+    def style_json(zoom: int) -> ResponseReturnValue:
+        color_strategy = request.args.get("color_strategy", "colorful_cluster")
+        base_url = request.url_root.rstrip("/")
+        tile_url = (
+            f"{base_url}/explorer/{zoom}/tile/{{z}}/{{x}}/{{y}}.png"
+            f"?color_strategy={color_strategy}"
+        )
+        gap_source_id = f"gap-explorer-{zoom}-{color_strategy}"
+        gap_source = {
+            "type": "raster",
+            "tiles": [tile_url],
+            "tileSize": 256,
+        }
+        gap_layer = {
+            "id": f"gap-explorer-layer-{zoom}-{color_strategy}",
+            "type": "raster",
+            "source": gap_source_id,
+            "paint": {"raster-opacity": 0.8},
+        }
+
+        map_style_url = config_accessor().map_style_url
+        if map_style_url:
+            style = requests.get(map_style_url, timeout=10).json()
+            style["sources"][gap_source_id] = gap_source
+            style["layers"].append(gap_layer)
+        else:
+            raster_tile_url = config_accessor().map_tile_url.replace("{zoom}", "{z}")
+            style = {
+                "version": 8,
+                "sources": {
+                    "base-map": {
+                        "type": "raster",
+                        "tiles": [raster_tile_url],
+                        "tileSize": 256,
+                    },
+                    gap_source_id: gap_source,
+                },
+                "layers": [
+                    {"id": "base-map-layer", "type": "raster", "source": "base-map"},
+                    gap_layer,
+                ],
+            }
+
+        return Response(json.dumps(style), mimetype="application/json")
+
     @blueprint.route("/<int:zoom>/tile/<int:z>/<int:x>/<int:y>.png")
     def tile(zoom: int, z: int, x: int, y: int) -> ResponseReturnValue:
+        config = config_accessor()
         square_x, square_y, square_size = get_explorer_square(zoom)
         evolution_state = SimpleNamespace(
             square_x=square_x, square_y=square_y, max_square_size=square_size

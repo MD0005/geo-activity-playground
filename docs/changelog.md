@@ -18,6 +18,83 @@ Types of changes
 ## Unreleased
 
 
+## Version 1.41.0 — 2026-07-15
+
+Changed:
+
+- Rework the Docker Compose documentation to focus on the pre-built GHCR image. ([GH-466](https://github.com/martin-ueding/geo-activity-playground/issues/466))
+- Rework the Docker run documentation to focus on the pre-built GHCR image. ([GH-465](https://github.com/martin-ueding/geo-activity-playground/issues/465))
+- Document the OsmAnd online overlay map. ([GH-467](https://github.com/martin-ueding/geo-activity-playground/issues/467))
+- Offer the explorer overlays (cluster, visits, missing, …) for every enabled explorer zoom level in the map layer control, named `Explorer {zoom} {strategy}` so they cluster by zoom level, instead of only a single fixed zoom. On the explorer tile pages the overlay for the page's own zoom level stays selected by default, and the chosen overlay strategy is remembered across pages while following each page's zoom.
+
+
+## Version 1.40.0 — 2026-07-14
+
+Added:
+
+- Add a "Disconnect" button to the Strava and Hammerhead settings pages. Disconnecting clears the stored authorization code and access/refresh tokens (Strava's cached token file, respectively the Hammerhead auth row's token fields), while keeping the client ID/secret so reconnecting doesn't require re-entering the developer app credentials. ([GH-440](https://github.com/martin-ueding/geo-activity-playground/issues/440))
+
+Changed:
+
+- Align all maps (home, day, activity name, activity lines, photo, search, segments, hall of fame, privacy zones) with the explorer and heatmap views so they offer the same selectable base and overlay layers instead of a single hardcoded background. ([GH-464](https://github.com/martin-ueding/geo-activity-playground/issues/464))
+
+Fixed:
+
+- Reload the configuration from `config.json` when the file changes on disk, based on its modification time. This fixes config changes that are seemingly not applied.
+- Return a proper response from the shutdown endpoint when running with multiple worker processes, instead of falling off the end of the view function and raising a `TypeError`. ([GH-440](https://github.com/martin-ueding/geo-activity-playground/discussions/440))
+
+## Version 1.39.4 — 2026-07-13
+
+Fixed:
+
+- Fix timezone mismatch when checking whether the Hammerhead access token has expired: SQLite strips timezone info from stored datetimes, so comparing a naive `expires_at` read from the database with a timezone-aware `datetime.now(UTC)` raised a `TypeError`. Both the stored value and the comparison now use naive UTC. ([GH-440](https://github.com/martin-ueding/geo-activity-playground/discussions/440))
+
+## Version 1.39.3 — 2026-07-11
+
+Fixed:
+
+- Exchange the Hammerhead OAuth authorization code for an access token immediately after the callback, instead of waiting for the next activity scan; the code expires quickly, so deferring the exchange caused a persistent `invalid_auth_request` error. Also add the `state` parameter to the authorization request for CSRF protection, as required by the Hammerhead API. ([GH-440](https://github.com/martin-ueding/geo-activity-playground/discussions/440))
+
+## Version 1.39.2 — 2026-07-11
+
+Fixed:
+
+- Pass `--transparent` to `mkgmap` so the explorer tile overlay in the generated Garmin map no longer hides the underlying base map on the device. ([GH-461](https://github.com/martin-ueding/geo-activity-playground/issues/461))
+
+## Version 1.39.1 — 2026-07-11
+
+Fixed:
+
+- Send `redirect_uri` in the Hammerhead OAuth token exchange, matching the value used in the authorization request; the Hammerhead API rejected the exchange without it. ([GH-440](https://github.com/martin-ueding/geo-activity-playground/discussions/440))
+
+## Version 1.39.0 — 2026-07-10
+
+Added:
+
+- Add a Markdown `description` field to activities, editable on the edit activity page and rendered on the activity detail page. ([GH-463](https://github.com/martin-ueding/geo-activity-playground/discussions/463))
+- Allow coloring the activity map line by heart rate, cadence or power (when available), plus a "None" option for a single solid color. ([GH-462](https://github.com/martin-ueding/geo-activity-playground/issues/462))
+- Add a "Map Display" setting to hide the progress marker pie charts on the activity map. ([GH-462](https://github.com/martin-ueding/geo-activity-playground/issues/462))
+
+Changed:
+
+- Document the `/explorer/{zoom}/style.json` endpoint on the explorer server-side page and in "Using Maps as Overlays". ([GH-459](https://github.com/martin-ueding/geo-activity-playground/issues/459))
+- Offer the same background map layer choices (Grayscale, Pastel, Color, Inverse Grayscale, Blank, hillshade, …) on the activity detail map as on the explorer and heatmap views. ([GH-462](https://github.com/martin-ueding/geo-activity-playground/issues/462))
+
+Fixed:
+
+- Require `vl-convert-python>=1.9.0`. ([GH-460](https://github.com/martin-ueding/geo-activity-playground/issues/460))
+- Fix `mkgmap` invocation for the Garmin IMG download so `--description` is passed as `--description=…` instead of a separate argument, which `mkgmap` was misinterpreting as an input file. ([GH-461](https://github.com/martin-ueding/geo-activity-playground/issues/461))
+
+## Version 1.38.0 — 2026-07-06
+
+Added:
+
+- Add a `/explorer/{zoom}/style.json?color_strategy={strategy}` endpoint that returns a MapLibre GL-compatible style document with the GAP explorer tiles injected as a raster source and layer. If `map_style_url` is set in `config.json`, the referenced style is fetched and extended; otherwise a minimal raster style using the configured `map_tile_url` is generated. The explorer tile and style endpoints now include `Access-Control-Allow-Origin: *` headers so that browser-based external map applications (e.g. Wanderer) can consume them directly. ([GH-459](https://github.com/martin-ueding/geo-activity-playground/issues/459))
+
+Fixed:
+
+- Fix Hammerhead client ID and secret being silently lost when the OAuth callback was handled by a different gunicorn worker than the settings form POST. Credentials are now stored in the database (shared across all workers) instead of `config.json`. ([GH-440](https://github.com/martin-ueding/geo-activity-playground/discussions/440))
+
 ## Version 1.37.0 — 2026-07-05
 
 Added:

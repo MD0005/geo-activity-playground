@@ -4,6 +4,9 @@
 <div class="row mb-3">
     <div class="col">
         <h1>{{ activity["name"] }}</h1>
+        {% if activity.description %}
+        <div class="text-body-secondary">{{ activity.description | render_markdown }}</div>
+        {% endif %}
     </div>
 </div>
 
@@ -101,21 +104,28 @@
         {% endif %}
     </div>
     <div class="col-sm-12 col-md-8">
+        {% if show_progress_markers %}
         <div class="btn-group btn-group-sm mb-2" role="group" aria-label="{{ _('Progress marker mode') }}">
             <input type="radio" class="btn-check" name="marker-mode" id="marker-mode-distance" autocomplete="off" checked>
             <label class="btn btn-outline-secondary" for="marker-mode-distance">{{ _('Distance') }}</label>
             <input type="radio" class="btn-check" name="marker-mode" id="marker-mode-time" autocomplete="off">
             <label class="btn btn-outline-secondary" for="marker-mode-time">{{ _('Time') }}</label>
         </div>
+        {% endif %}
         <div id="activity-show-map" style="height: 500px;" class="mb-3"></div>
-        <script>
+        <script type="module">
+            import { add_layers_to_map } from '/static/map-layers.js';
+
             var map = L.map('activity-show-map', {
                 fullscreenControl: true
             });
-            L.tileLayer('/tile/pastel/{z}/{x}/{y}.png', {
-                maxZoom: 19,
-                attribution: '{{ map_tile_attribution|safe }}'
-            }).addTo(map);
+            add_layers_to_map(map, {
+                zoom: {{ explorer_zoom_levels[0] }},
+                zoomLevels: {{ explorer_zoom_levels | tojson }},
+                attribution: '{{ map_tile_attribution|safe }}',
+                baseLayer: 'Pastel',
+                overlay: null
+            });
 
             const trackGeojson = {{ color_line_geojson|safe }};
             const progressMarkerGeojson = {{ progress_marker_geojson|safe }};
@@ -255,9 +265,12 @@
                 });
             }
 
+            {% if show_progress_markers %}
             let currentMarkerLayer = makeMarkerLayer(progressMarkerGeojson).addTo(map);
+            {% endif %}
             map.fitBounds(trackLayer.getBounds());
 
+            {% if show_progress_markers %}
             document.getElementById('marker-mode-distance').addEventListener('change', function () {
                 map.removeLayer(currentMarkerLayer);
                 currentMarkerLayer = makeMarkerLayer(progressMarkerGeojson).addTo(map);
@@ -266,6 +279,7 @@
                 map.removeLayer(currentMarkerLayer);
                 currentMarkerLayer = makeMarkerLayer(progressMarkerTimeGeojson).addTo(map);
             });
+            {% endif %}
 
             document.addEventListener('DOMContentLoaded', function () {
                 const lineColorColumnSelect = document.getElementById('line-color-column-select');
@@ -331,6 +345,7 @@
                     <option {% if name==line_color_column %} selected {% endif %} value="{{ name }}"
                         data-unit="{{ column.unit }}" data-format="{{ column.format }}">{{ column.display_name }}</option>
                     {% endfor %}
+                    <option value="">{{ _('None (solid color)') }}</option>
             </select>
         </div>
         {% endif %}
@@ -486,11 +501,6 @@
         const clusterDiffUrl = container.dataset.clusterDiffUrl;
 
         const map = L.map(container, { fullscreenControl: true });
-
-        L.tileLayer('/tile/color/{z}/{x}/{y}.png', {
-            maxZoom: 19,
-            attribution
-        }).addTo(map);
 
         // Add new tiles layer (orange outline)
         const tilesLayer = L.geoJSON(tilesGeojson, {
