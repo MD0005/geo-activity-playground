@@ -7,9 +7,8 @@ from collections.abc import Callable
 import numpy as np
 import pandas as pd
 
-from .config import Config
 from .coordinates import get_distance
-from .datamodel import DB, Activity
+from .datamodel import DB, Activity, ActivityImportConfig
 from .missing_values import some
 from .tag_extraction import apply_tag_extraction_from_database
 from .tiles import compute_tile_float
@@ -18,8 +17,18 @@ from .time_conversion import get_timezone
 logger = logging.getLogger(__name__)
 
 
+def _clamp_index(index: int, length: int) -> int:
+    """Keep a positional index within a series of the given length."""
+    if index < 0:
+        return index
+    return min(index, length - 1)
+
+
 def enrichment_set_timezone(
-    activity: Activity, time_series: pd.DataFrame, config: Config, force: bool
+    activity: Activity,
+    time_series: pd.DataFrame,
+    config: ActivityImportConfig,
+    force: bool,
 ) -> bool:
     assert len(time_series) > 0, (
         f"You cannot import an activity without points. {activity=}"
@@ -33,7 +42,10 @@ def enrichment_set_timezone(
 
 
 def enrichment_normalize_time(
-    activity: Activity, time_series: pd.DataFrame, config: Config, force: bool
+    activity: Activity,
+    time_series: pd.DataFrame,
+    config: ActivityImportConfig,
+    force: bool,
 ) -> bool:
     # Routes (as opposed to tracks) don't have time information. We cannot do anything with time here.
     if (
@@ -70,14 +82,22 @@ def enrichment_normalize_time(
         time_series["time"].iloc[0],
     )
 
-    new_start = some(time_series["time"].iloc[activity.index_begin or 0])
+    new_start = some(
+        time_series["time"].iloc[
+            _clamp_index(activity.index_begin or 0, len(time_series))
+        ]
+    )
     if new_start != activity.start:
         activity.start = new_start
         changed = True
 
     new_elapsed_time = some(
-        time_series["time"].iloc[activity.index_end or -1]
-        - time_series["time"].iloc[activity.index_begin or 0]
+        time_series["time"].iloc[
+            _clamp_index(activity.index_end or -1, len(time_series))
+        ]
+        - time_series["time"].iloc[
+            _clamp_index(activity.index_begin or 0, len(time_series))
+        ]
     )
     if new_elapsed_time != activity.elapsed_time:
         activity.elapsed_time = new_elapsed_time
@@ -87,7 +107,10 @@ def enrichment_normalize_time(
 
 
 def enrichment_rename_altitude(
-    activity: Activity, time_series: pd.DataFrame, config: Config, force: bool
+    activity: Activity,
+    time_series: pd.DataFrame,
+    config: ActivityImportConfig,
+    force: bool,
 ) -> bool:
     if "altitude" in time_series.columns:
         time_series.rename(columns={"altitude": "elevation"}, inplace=True)
@@ -97,7 +120,10 @@ def enrichment_rename_altitude(
 
 
 def enrichment_compute_tile_xy(
-    activity: Activity, time_series: pd.DataFrame, config: Config, force: bool
+    activity: Activity,
+    time_series: pd.DataFrame,
+    config: ActivityImportConfig,
+    force: bool,
 ) -> bool:
     x_missing = "x" not in time_series.columns
     y_missing = "y" not in time_series.columns
@@ -118,7 +144,10 @@ def enrichment_compute_tile_xy(
 
 
 def enrichment_copernicus_elevation(
-    activity: Activity, time_series: pd.DataFrame, config: Config, force: bool
+    activity: Activity,
+    time_series: pd.DataFrame,
+    config: ActivityImportConfig,
+    force: bool,
 ) -> bool:
     from .copernicus_dem import get_elevation
 
@@ -133,7 +162,10 @@ def enrichment_copernicus_elevation(
 
 
 def enrichment_elevation_gain(
-    activity: Activity, time_series: pd.DataFrame, config: Config, force: bool
+    activity: Activity,
+    time_series: pd.DataFrame,
+    config: ActivityImportConfig,
+    force: bool,
 ) -> bool:
     if (
         "elevation" in time_series.columns
@@ -151,8 +183,12 @@ def enrichment_elevation_gain(
         time_series["elevation_gain_cum"] = elevation_diff.cumsum().fillna(0)
 
         activity.elevation_gain = (
-            time_series["elevation_gain_cum"].iloc[activity.index_end or -1]
-            - time_series["elevation_gain_cum"].iloc[activity.index_begin or 0]
+            time_series["elevation_gain_cum"].iloc[
+                _clamp_index(activity.index_end or -1, len(time_series))
+            ]
+            - time_series["elevation_gain_cum"].iloc[
+                _clamp_index(activity.index_begin or 0, len(time_series))
+            ]
         )
         return True
     else:
@@ -160,12 +196,19 @@ def enrichment_elevation_gain(
 
 
 def enrichment_add_calories(
-    activity: Activity, time_series: pd.DataFrame, config: Config, force: bool
+    activity: Activity,
+    time_series: pd.DataFrame,
+    config: ActivityImportConfig,
+    force: bool,
 ) -> bool:
     if "calories" in time_series.columns and (activity.calories is None or force):
         activity.calories = (
-            time_series["calories"].iloc[activity.index_end or -1]
-            - time_series["calories"].iloc[activity.index_begin or 0]
+            time_series["calories"].iloc[
+                _clamp_index(activity.index_end or -1, len(time_series))
+            ]
+            - time_series["calories"].iloc[
+                _clamp_index(activity.index_begin or 0, len(time_series))
+            ]
         )
         return True
     else:
@@ -173,7 +216,10 @@ def enrichment_add_calories(
 
 
 def enrichment_distance(
-    activity: Activity, time_series: pd.DataFrame, config: Config, force: bool
+    activity: Activity,
+    time_series: pd.DataFrame,
+    config: ActivityImportConfig,
+    force: bool,
 ) -> bool:
     changed = False
 
@@ -234,8 +280,12 @@ def enrichment_distance(
         changed = True
 
     new_distance_km = (
-        time_series["distance_km"].iloc[activity.index_end or -1]
-        - time_series["distance_km"].iloc[activity.index_begin or 0]
+        time_series["distance_km"].iloc[
+            _clamp_index(activity.index_end or -1, len(time_series))
+        ]
+        - time_series["distance_km"].iloc[
+            _clamp_index(activity.index_begin or 0, len(time_series))
+        ]
     )
     if new_distance_km != activity.distance_km:
         activity.distance_km = new_distance_km
@@ -245,7 +295,10 @@ def enrichment_distance(
 
 
 def enrichment_moving_time(
-    activity: Activity, time_series: pd.DataFrame, config: Config, force: bool
+    activity: Activity,
+    time_series: pd.DataFrame,
+    config: ActivityImportConfig,
+    force: bool,
 ) -> bool:
     def moving_time(group) -> datetime.timedelta:
         selection = group["speed"] > 1.0
@@ -266,23 +319,32 @@ def enrichment_moving_time(
 
 
 def enrichment_copy_latlon(
-    activity: Activity, time_series: pd.DataFrame, config: Config, force: bool
+    activity: Activity,
+    time_series: pd.DataFrame,
+    config: ActivityImportConfig,
+    force: bool,
 ) -> bool:
     if activity.start_latitude is None or force:
         activity.start_latitude = time_series["latitude"].iloc[
-            activity.index_begin or 0
+            _clamp_index(activity.index_begin or 0, len(time_series))
         ]
-        activity.end_latitude = time_series["latitude"].iloc[activity.index_end or -1]
+        activity.end_latitude = time_series["latitude"].iloc[
+            _clamp_index(activity.index_end or -1, len(time_series))
+        ]
         activity.start_longitude = time_series["longitude"].iloc[
-            activity.index_begin or 0
+            _clamp_index(activity.index_begin or 0, len(time_series))
         ]
-        activity.end_longitude = time_series["longitude"].iloc[activity.index_end or -1]
+        activity.end_longitude = time_series["longitude"].iloc[
+            _clamp_index(activity.index_end or -1, len(time_series))
+        ]
         return True
     else:
         return False
 
 
-enrichments: list[Callable[[Activity, pd.DataFrame, Config, bool], bool]] = [
+enrichments: list[
+    Callable[[Activity, pd.DataFrame, ActivityImportConfig, bool], bool]
+] = [
     enrichment_set_timezone,
     enrichment_normalize_time,
     enrichment_rename_altitude,
@@ -297,7 +359,10 @@ enrichments: list[Callable[[Activity, pd.DataFrame, Config, bool], bool]] = [
 
 
 def apply_enrichments(
-    activity: Activity, time_series: pd.DataFrame, config: Config, force: bool
+    activity: Activity,
+    time_series: pd.DataFrame,
+    config: ActivityImportConfig,
+    force: bool,
 ) -> bool:
     was_changed = False
     for enrichment in enrichments:
@@ -308,7 +373,7 @@ def apply_enrichments(
 def update_and_commit(
     activity: Activity,
     time_series: pd.DataFrame,
-    config: Config,
+    config: ActivityImportConfig,
     force: bool = False,
 ) -> None:
     if len(time_series) < 2:
