@@ -15,20 +15,22 @@ from geo_activity_playground.core.datamodel import (
     ClusterHistoryEvent,
     Equipment,
     ExplorerTileBookmark,
-    HeatmapTileCache,
     Kind,
-    Photo,
-    PlotSpec,
-    Segment,
-    SegmentCheck,
-    SegmentMatch,
-    SquarePlannerBookmark,
     StoredSearchQuery,
     Tag,
     TileVisit,
     activity_tag_association_table,
 )
-from geo_activity_playground.importers import strava_api
+from geo_activity_playground.features.activity_photos.model import Photo
+from geo_activity_playground.features.heatmap.model import HeatmapTileCache
+from geo_activity_playground.features.plot_builder.model import PlotSpec
+from geo_activity_playground.features.segments.model import (
+    Segment,
+    SegmentCheck,
+    SegmentMatch,
+)
+from geo_activity_playground.features.square_planner.model import SquarePlannerBookmark
+from geo_activity_playground.features.strava_api import importer as strava_api
 
 
 def test_wipe_local_state_truncates_user_tables_and_files(client, app, tmp_path):
@@ -217,7 +219,7 @@ def test_reset_heatmap_cache_clears_db_table(client, app):
         DB.session.commit()
 
     response = client.post(
-        "/settings/maintenance", data={"action": "reset_heatmap_cache"}
+        "/settings/heatmap-cache", data={"action": "reset_heatmap_cache"}
     )
     assert response.status_code == 302
 
@@ -267,7 +269,7 @@ def test_cleanup_heatmap_cache_stale_removes_old_and_never_used_entries(client, 
         DB.session.commit()
 
     response = client.post(
-        "/settings/maintenance", data={"action": "cleanup_heatmap_cache_stale"}
+        "/settings/heatmap-cache", data={"action": "cleanup_heatmap_cache_stale"}
     )
     assert response.status_code == 302
 

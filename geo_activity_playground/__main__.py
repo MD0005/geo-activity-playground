@@ -5,10 +5,15 @@ import sys
 
 import coloredlogs
 
-from .core.photos import main_annotate_photos, main_inspect_photo
-from .explorer.video import explorer_video_main
-from .heatmap_video import main_heatmap_video
-from .importers.strava_checkout import convert_strava_checkout
+from .features.activity_photos.cli import (
+    register_main_annotate_photos,
+    register_main_inspect_photo,
+)
+from .features.explorer_video.cli import (
+    register_main_explorer_video,
+)
+from .features.heatmap_video.cli import register_main_heatmap_video
+from .features.strava_checkout.importer import convert_strava_checkout
 from .webui.app import create_app, web_ui_main
 
 logger = logging.getLogger(__name__)
@@ -101,69 +106,10 @@ def main() -> None:
         description="The tools are organized in subcommands.", metavar="Command"
     )
 
-    subparser = subparsers.add_parser(
-        "explorer-video", help="Generate video with explorer timeline."
-    )
-    subparser.add_argument(
-        "--zoom",
-        type=int,
-        default=14,
-        help="Explorer zoom level (default: %(default)s)",
-    )
-    subparser.add_argument(
-        "--video-width",
-        type=int,
-        default=1920,
-        help="Output video width in pixels (default: %(default)s)",
-    )
-    subparser.add_argument(
-        "--video-height",
-        type=int,
-        default=1080,
-        help="Output video height in pixels (default: %(default)s)",
-    )
-    subparser.add_argument(
-        "--fps",
-        type=int,
-        default=30,
-        help="Frames per second for output video (default: %(default)s)",
-    )
-    subparser.add_argument(
-        "--steps-per-tile",
-        type=int,
-        default=12,
-        help="Interpolation frames between consecutive tiles (default: %(default)s)",
-    )
-    subparser.add_argument(
-        "--fade-frames",
-        type=int,
-        default=12,
-        help="Fade-in and fade-out frames per chunk (default: %(default)s)",
-    )
-    subparser.add_argument(
-        "--pause-frames",
-        type=int,
-        default=12,
-        help="Hold frames before fade-out per chunk (default: %(default)s)",
-    )
-    subparser.add_argument(
-        "--download-workers",
-        type=int,
-        default=16,
-        help="Parallel workers for OSM tile downloads (default: %(default)s)",
-    )
-    subparser.add_argument(
-        "--output-path",
-        type=pathlib.Path,
-        default=None,
-        help="Optional output path for MP4 file",
-    )
-    subparser.add_argument(
-        "--map-tile-url",
-        default=None,
-        help="Optional map tile URL template override",
-    )
-    subparser.set_defaults(func=explorer_video_main)
+    register_main_inspect_photo(subparsers)
+    register_main_annotate_photos(subparsers)
+    register_main_heatmap_video(subparsers)
+    register_main_explorer_video(subparsers)
 
     subparser = subparsers.add_parser(
         "convert-strava-checkout",
@@ -241,52 +187,6 @@ def main() -> None:
         "--hammerhead-end",
         help="End date to limit Hammerhead sync, format YYYY-MM-DD",
     )
-
-    subparser = subparsers.add_parser(
-        "heatmap-video", help="Create a video with the evolution of the heatmap"
-    )
-    subparser.add_argument("latitude", type=float)
-    subparser.add_argument("longitude", type=float)
-    subparser.add_argument("zoom", type=int)
-    subparser.add_argument(
-        "--decay",
-        type=float,
-        default=0.05,
-        help="Decay factor per frame (default: %(default)s)",
-    )
-    subparser.add_argument(
-        "--video-width",
-        type=int,
-        default=1920,
-        help="Output video width in pixels (default: %(default)s)",
-    )
-    subparser.add_argument(
-        "--video-height",
-        type=int,
-        default=1080,
-        help="Output video height in pixels (default: %(default)s)",
-    )
-    subparser.set_defaults(func=main_heatmap_video)
-
-    subparser = subparsers.add_parser(
-        "inspect-photo",
-        help="Extract EXIF data from the image to see how it would be imported",
-    )
-    subparser.add_argument("path", type=pathlib.Path)
-    subparser.set_defaults(func=main_inspect_photo)
-
-    subparser = subparsers.add_parser(
-        "annotate-photos",
-        help="Write GPS coordinates into EXIF of photos that lack location data",
-    )
-    subparser.add_argument(
-        "paths",
-        type=pathlib.Path,
-        nargs="+",
-        metavar="PHOTO",
-        help="JPEG photo files to annotate",
-    )
-    subparser.set_defaults(func=main_annotate_photos)
 
     subparser = subparsers.add_parser(
         "export-kml",

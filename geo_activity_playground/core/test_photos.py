@@ -1,4 +1,7 @@
-from .photos import apply_ref_sign, get_metadata_from_image
+from ..features.activity_photos.exif_handling import (
+    apply_ref_sign,
+    get_metadata_from_image,
+)
 
 
 class _Ratio:
@@ -40,7 +43,7 @@ def test_get_metadata_from_image_respects_hemisphere(tmp_path, monkeypatch) -> N
     }
 
     monkeypatch.setattr(
-        "geo_activity_playground.core.photos.exifread.process_file",
+        "geo_activity_playground.features.activity_photos.exif_handling.exifread.process_file",
         lambda _: tags,
     )
 

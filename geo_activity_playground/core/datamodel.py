@@ -138,15 +138,15 @@ class Activity(DB.Model):
         secondary=activity_tag_association_table, back_populates="activities"
     )
 
-    photos: Mapped[list["Photo"]] = relationship(
+    photos: Mapped[list["Photo"]] = relationship(  # noqa: F821
         back_populates="activity", cascade="all, delete-orphan"
     )
 
-    segment_matches: Mapped[list["SegmentMatch"]] = relationship(
+    segment_matches: Mapped[list["SegmentMatch"]] = relationship(  # noqa: F821
         back_populates="activity", cascade="all, delete-orphan"
     )
 
-    segment_checks: Mapped[list["SegmentCheck"]] = relationship(
+    segment_checks: Mapped[list["SegmentCheck"]] = relationship(  # noqa: F821
         back_populates="activity", cascade="all, delete-orphan"
     )
 
@@ -435,82 +435,6 @@ def get_or_make_kind(name: str) -> Kind:
         return kind
 
 
-class SquarePlannerBookmark(DB.Model):
-    __tablename__ = "square_planner_bookmarks"
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-
-    zoom: Mapped[int] = mapped_column(sa.Integer, nullable=False)
-    x: Mapped[int] = mapped_column(sa.Integer, nullable=False)
-    y: Mapped[int] = mapped_column(sa.Integer, nullable=False)
-    size: Mapped[int] = mapped_column(sa.Integer, nullable=False)
-    name: Mapped[str] = mapped_column(sa.String, nullable=False)
-
-    __table_args__ = (sa.UniqueConstraint("zoom", "x", "y", "size", name="kinds_name"),)
-
-
-class PlotSpec(DB.Model):
-    __tablename__ = "plot_specs"
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-
-    name: Mapped[str] = mapped_column(sa.String, nullable=False)
-
-    mark: Mapped[str] = mapped_column(sa.String, nullable=False, default="")
-    x: Mapped[str] = mapped_column(sa.String, nullable=False, default="")
-    y: Mapped[str] = mapped_column(sa.String, nullable=False, default="")
-    color: Mapped[str] = mapped_column(sa.String, nullable=False, default="")
-    shape: Mapped[str] = mapped_column(sa.String, nullable=False, default="")
-    size: Mapped[str] = mapped_column(sa.String, nullable=False, default="")
-    row: Mapped[str] = mapped_column(sa.String, nullable=False, default="")
-    opacity: Mapped[str] = mapped_column(sa.String, nullable=False, default="")
-    column: Mapped[str] = mapped_column(sa.String, nullable=False, default="")
-    facet: Mapped[str] = mapped_column(sa.String, nullable=False, default="")
-    group_by: Mapped[str] = mapped_column(sa.String, nullable=True, default="")
-
-    FIELDS = [
-        "name",
-        "mark",
-        "x",
-        "y",
-        "color",
-        "shape",
-        "size",
-        "row",
-        "opacity",
-        "column",
-        "facet",
-        "group_by",
-    ]
-
-    def __str__(self) -> str:
-        return self.name
-
-    def to_json(self) -> str:
-        return json.dumps(
-            {key: getattr(self, key) for key in self.FIELDS if getattr(self, key)}
-        )
-
-
-class Photo(DB.Model):
-    __tablename__ = "photos"
-    id: Mapped[int] = mapped_column(primary_key=True)
-
-    filename: Mapped[str] = mapped_column(sa.String, nullable=False)
-    time: Mapped[datetime.datetime] = mapped_column(sa.DateTime, nullable=False)
-    latitude: Mapped[float] = mapped_column(sa.Float, nullable=False)
-    longitude: Mapped[float] = mapped_column(sa.Float, nullable=False)
-
-    activity_id: Mapped[int] = mapped_column(
-        ForeignKey("activities.id", name="activity_id"), nullable=False
-    )
-    activity: Mapped["Activity"] = relationship(back_populates="photos")
-
-    @property
-    def path(self) -> pathlib.Path:
-        return pathlib.Path(self.filename)
-
-
 class ExplorerTileBookmark(DB.Model):
     __tablename__ = "explorer_tile_bookmarks"
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -792,207 +716,6 @@ class StoredSearchQuery(DB.Model):
         )
 
 
-class HeatmapTileCache(DB.Model):
-    __tablename__ = "heatmap_tile_cache"
-    __table_args__ = (
-        sa.Index(
-            "idx_heatmap_tile_cache_lookup",
-            "zoom",
-            "tile_x",
-            "tile_y",
-            "search_query_id",
-        ),
-        sa.UniqueConstraint(
-            "zoom",
-            "tile_x",
-            "tile_y",
-            "search_query_id",
-            name="uq_heatmap_tile_cache_tile_query",
-        ),
-    )
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    zoom: Mapped[int] = mapped_column(sa.Integer, nullable=False)
-    tile_x: Mapped[int] = mapped_column(sa.Integer, nullable=False)
-    tile_y: Mapped[int] = mapped_column(sa.Integer, nullable=False)
-    search_query_id: Mapped[int | None] = mapped_column(
-        ForeignKey("stored_search_queries.id", name="heatmap_cache_search_query_id"),
-        nullable=True,
-        index=True,
-    )
-    counts: Mapped[bytes] = mapped_column(sa.LargeBinary, nullable=False)
-    included_activity_ids: Mapped[list[int]] = mapped_column(sa.JSON, nullable=False)
-    num_activities: Mapped[int] = mapped_column(sa.Integer, nullable=False, default=0)
-    last_used: Mapped[datetime.datetime | None] = mapped_column(
-        sa.DateTime, nullable=True
-    )
-
-
-class Segment(DB.Model):
-    """A user-defined segment (polyline) for tracking repeated efforts."""
-
-    __tablename__ = "segments"
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    name: Mapped[str] = mapped_column(sa.String, nullable=False)
-
-    # Coordinates as a `list[tuple[float, float]]` with lat-lon order. That is opposite to GeoJSON.
-    coordinates_json: Mapped[str] = mapped_column(sa.Text, nullable=False, default="[]")
-
-    created_at: Mapped[datetime.datetime] = mapped_column(
-        sa.DateTime, nullable=False, default=datetime.datetime.utcnow
-    )
-
-    matches: Mapped[list["SegmentMatch"]] = relationship(
-        back_populates="segment", cascade="all, delete-orphan"
-    )
-
-    checks: Mapped[list["SegmentCheck"]] = relationship(
-        back_populates="segment", cascade="all, delete-orphan"
-    )
-
-    @property
-    def coordinates(self) -> list[list[float]]:
-        """Get coordinates as list of [lat, lon] pairs."""
-        return json.loads(self.coordinates_json)
-
-    @coordinates.setter
-    def coordinates(self, value: list[list[float]]) -> None:
-        """Set coordinates from list of [lat, lon] pairs."""
-        self.coordinates_json = json.dumps(value)
-
-    @property
-    def length_km(self) -> float:
-        """Calculate approximate length of segment in kilometers."""
-        from .coordinates import get_distance
-
-        coords = self.coordinates
-        total = 0.0
-        for i in range(len(coords) - 1):
-            lat1, lon1 = coords[i]
-            lat2, lon2 = coords[i + 1]
-            total += get_distance(lat1, lon1, lat2, lon2)
-        return total / 1000  # Convert meters to km
-
-    def __str__(self) -> str:
-        return f"{self.name} ({self.length_km:.2f} km)"
-
-
-class SegmentMatch(DB.Model):
-    """Records when an activity passes through a segment.
-
-    Stores the entry and exit points/times for computing segment duration
-    and comparing efforts.
-    """
-
-    __tablename__ = "segment_matches"
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-
-    segment_id: Mapped[int] = mapped_column(
-        ForeignKey("segments.id", name="segment_match_segment_id"),
-        nullable=False,
-        index=True,
-    )
-    segment: Mapped["Segment"] = relationship(back_populates="matches")
-
-    activity_id: Mapped[int] = mapped_column(
-        ForeignKey("activities.id", name="segment_match_activity_id"),
-        nullable=False,
-        index=True,
-    )
-    activity: Mapped["Activity"] = relationship(back_populates="segment_matches")
-
-    # Entry point in the activity time series
-    entry_index: Mapped[int] = mapped_column(sa.Integer, nullable=False)
-    entry_time: Mapped[datetime.datetime | None] = mapped_column(
-        sa.DateTime, nullable=True
-    )
-
-    # Exit point in the activity time series
-    exit_index: Mapped[int] = mapped_column(sa.Integer, nullable=False)
-    exit_time: Mapped[datetime.datetime | None] = mapped_column(
-        sa.DateTime, nullable=True
-    )
-
-    # Computed duration for easy querying/sorting
-    duration: Mapped[datetime.timedelta | None] = mapped_column(
-        sa.Interval, nullable=True
-    )
-
-    # Distance covered in this segment effort (may differ slightly from segment length)
-    distance_km: Mapped[float | None] = mapped_column(sa.Float, nullable=True)
-
-    # Average power across this segment effort, when available on the activity.
-    power_avg: Mapped[float | None] = mapped_column(sa.Float, nullable=True)
-
-    def __repr__(self) -> str:
-        duration_str = str(self.duration).split(".")[0] if self.duration else "unknown"
-        return f"SegmentMatch(segment={self.segment.name}, activity={self.activity_id}, duration={duration_str})"
-
-
-class SegmentCheck(DB.Model):
-    """Records when an activity passes through a segment.
-
-    Stores the entry and exit points/times for computing segment duration
-    and comparing efforts.
-    """
-
-    __tablename__ = "segment_checks"
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-
-    segment_id: Mapped[int] = mapped_column(
-        ForeignKey("segments.id", name="segment_check_segment_id"),
-        nullable=False,
-        index=True,
-    )
-    segment: Mapped["Segment"] = relationship(back_populates="checks")
-
-    activity_id: Mapped[int] = mapped_column(
-        ForeignKey("activities.id", name="segment_check_activity_id"),
-        nullable=False,
-        index=True,
-    )
-    activity: Mapped["Activity"] = relationship(back_populates="segment_checks")
-
-    __table_args__ = (
-        sa.UniqueConstraint(
-            "segment_id", "activity_id", name="unique_segment_activity_check"
-        ),
-    )
-
-
-class HammerheadAuth(DB.Model):
-    """Persistent OAuth credentials, tokens, and import cursor for the Hammerhead Karoo API.
-
-    Single-row table.
-    """
-
-    __tablename__ = "hammerhead_auth"
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    client_id: Mapped[str | None] = mapped_column(sa.String, nullable=True)
-    client_secret: Mapped[str | None] = mapped_column(sa.String, nullable=True)
-    client_code: Mapped[str | None] = mapped_column(sa.String, nullable=True)
-    redirect_uri: Mapped[str | None] = mapped_column(sa.String, nullable=True)
-    access_token: Mapped[str | None] = mapped_column(sa.String, nullable=True)
-    refresh_token: Mapped[str | None] = mapped_column(sa.String, nullable=True)
-    expires_at: Mapped[datetime.datetime | None] = mapped_column(
-        sa.DateTime, nullable=True
-    )
-    last_activity_date: Mapped[str | None] = mapped_column(sa.String, nullable=True)
-
-
-def get_hammerhead_auth() -> HammerheadAuth:
-    row = DB.session.scalar(sqlalchemy.select(HammerheadAuth).limit(1))
-    if row is None:
-        row = HammerheadAuth()
-        DB.session.add(row)
-        DB.session.commit()
-    return row
-
-
 class HeartRateConfig(DB.Model):
     """Single-row settings for heart-rate zone computation."""
 
@@ -1004,19 +727,6 @@ class HeartRateConfig(DB.Model):
         sa.Integer, nullable=False, default=0
     )
     heart_rate_maximum: Mapped[int | None] = mapped_column(sa.Integer, nullable=True)
-
-
-class StravaConfig(DB.Model):
-    """Single-row Strava API credentials."""
-
-    __tablename__ = "config_strava"
-
-    id: Mapped[int] = mapped_column(primary_key=True, default=1)
-    strava_client_id: Mapped[int] = mapped_column(sa.Integer, nullable=False, default=0)
-    strava_client_secret: Mapped[str] = mapped_column(
-        sa.String, nullable=False, default=""
-    )
-    strava_client_code: Mapped[str | None] = mapped_column(sa.String, nullable=True)
 
 
 class ActivityImportConfig(DB.Model):

@@ -1,0 +1,312 @@
+import datetime
+import logging
+import pathlib
+import pickle
+import time
+import zoneinfo
+
+import pandas as pd
+import sqlalchemy
+from stravalib import Client
+from stravalib.exc import Fault, ObjectNotFound, RateLimitExceeded
+from tqdm import tqdm
+
+from ...core.activities import ActivityRepository
+from ...core.config import ConfigAccessor
+from ...core.datamodel import DB, Activity, get_or_make_equipment, get_or_make_kind
+from ...core.enrichment import update_and_commit
+from ...core.paths import (
+    activity_extracted_time_series_dir,
+    strava_api_dir,
+    strava_last_activity_date_path,
+)
+from ...core.tasks import get_state, set_state
+from .model import StravaConfig
+
+logger = logging.getLogger(__name__)
+
+
+def get_current_access_token(config: StravaConfig) -> str:
+    tokens = get_state(strava_api_dir() / "strava_tokens.json", None)
+    if not tokens:
+        logger.info("Create Strava access token …")
+        client = Client()
+        token_response = client.exchange_code_for_token(
+            client_id=config.strava_client_id,
+            client_secret=config.strava_client_secret,
+            code=config.strava_client_code,
+        )
+        tokens = {
+            "access": token_response["access_token"],
+            "refresh": token_response["refresh_token"],
+            "expires_at": token_response["expires_at"],
+        }
+
+    if tokens["expires_at"] < datetime.datetime.now().timestamp():
+        logger.info("Renew Strava access token …")
+        client = Client()
+        token_response = client.refresh_access_token(
+            client_id=config.strava_client_id,
+            client_secret=config.strava_client_secret,
+            refresh_token=tokens["refresh"],
+        )
+        tokens = {
+            "access": token_response["access_token"],
+            "refresh": token_response["refresh_token"],
+            "expires_at": token_response["expires_at"],
+        }
+
+    set_state(strava_api_dir() / "strava_tokens.json", tokens)
+
+    return tokens["access"]
+
+
+def round_to_next_quarter_hour(date: datetime.datetime) -> datetime.datetime:
+    previous_quarter = datetime.datetime(
+        date.year, date.month, date.day, date.hour, date.minute // 15 * 15, 0
+    )
+    next_quarter = previous_quarter + datetime.timedelta(minutes=15)
+    return next_quarter
+
+
+def refresh_activity_names_from_strava(config: StravaConfig) -> int:
+    updated_names = 0
+    while True:
+        try:
+            updated_names += _refresh_activity_names_from_strava_once(config)
+            return updated_names
+        except RateLimitExceeded:
+            pass
+        except Fault as e:
+            if "Too Many Requests" not in str(e):
+                raise
+
+        now = datetime.datetime.now()
+        next_quarter = round_to_next_quarter_hour(now)
+        seconds_to_wait = (next_quarter - now).total_seconds() + 10
+        logger.warning(
+            f"Strava rate limit exceeded, will try again at {next_quarter.isoformat()}."
+        )
+        time.sleep(seconds_to_wait)
+
+
+def _refresh_activity_names_from_strava_once(config: StravaConfig) -> int:
+    client = Client(access_token=get_current_access_token(config))
+    updated_names = 0
+    page = 1
+
+    while True:
+        strava_activities = list(client.get_activities(page=page, per_page=200))
+        if not strava_activities:
+            break
+
+        names_by_upstream_id = {
+            str(activity.id): activity.name
+            for activity in strava_activities
+            if activity.id is not None and activity.name
+        }
+        if names_by_upstream_id:
+            activities = DB.session.scalars(
+                sqlalchemy.select(Activity).where(
+                    Activity.upstream_id.in_(names_by_upstream_id.keys())
+                )
+            ).all()
+            for activity in activities:
+                updated_name = names_by_upstream_id[activity.upstream_id]
+                if activity.name != updated_name:
+                    logger.info(
+                        "Updating activity %s name from %r to %r.",
+                        activity.id,
+                        activity.name,
+                        updated_name,
+                    )
+                    activity.name = updated_name
+                    updated_names += 1
+            DB.session.commit()
+
+        if len(strava_activities) < 200:
+            break
+        page += 1
+
+    return updated_names
+
+
+def import_from_strava_api(
+    config_accessor: ConfigAccessor,
+    repository: ActivityRepository,
+    strava_begin: str | None = None,
+    strava_end: str | None = None,
+) -> None:
+    try:
+        while try_import_strava(config_accessor, repository, strava_begin, strava_end):
+            now = datetime.datetime.now()
+            next_quarter = round_to_next_quarter_hour(now)
+            seconds_to_wait = (next_quarter - now).total_seconds() + 10
+            logger.warning(
+                f"Strava rate limit exceeded, will try again at {next_quarter.isoformat()}."
+            )
+            time.sleep(seconds_to_wait)
+    except Fault as e:
+        logger.error(
+            "Strava API authentication failed, skipping Strava import. "
+            "Your authorization code may be expired or invalid — please follow the "
+            "Strava setup instructions to re-authorize. "
+            f"Details: {e}"
+        )
+
+
+def try_import_strava(
+    config_accessor: ConfigAccessor,
+    repository: ActivityRepository,
+    strava_begin: str | None = None,
+    strava_end: str | None = None,
+) -> bool:
+    if strava_begin:
+        get_after = f"{strava_begin}T00:00:00Z"
+    else:
+        get_after = get_state(strava_last_activity_date_path(), "2000-01-01T00:00:00Z")
+
+    gear_names = {None: "None"}
+
+    client = Client(access_token=get_current_access_token(config_accessor.strava()))
+
+    try:
+        for strava_activity in tqdm(
+            client.get_activities(after=get_after), desc="Downloading Strava activities"
+        ):
+            logger.info(
+                f"Examining Strava activity with ID {strava_activity.id} and name '{strava_activity.name}' …"
+            )
+            if (
+                strava_end
+                and strava_activity.start_date is not None
+                and str(strava_activity.start_date) > strava_end
+            ):
+                logger.info(f"Reached {strava_end}, stopping.")
+                break
+
+            if (
+                existing_activity := DB.session.scalar(
+                    sqlalchemy.select(Activity).where(
+                        Activity.upstream_id == strava_activity.id
+                    )
+                )
+            ) is not None:
+                logger.info(
+                    f"Strava activity {strava_activity.id} already exists in database as {existing_activity.id}, skipping."
+                )
+                continue
+
+            cache_file = (
+                pathlib.Path("Cache")
+                / "Strava Activity Metadata"
+                / f"{strava_activity.id}.pickle"
+            )
+            cache_file.parent.mkdir(exist_ok=True, parents=True)
+            with open(cache_file, "wb") as f:
+                pickle.dump(strava_activity, f)
+            if strava_activity.gear_id not in gear_names:
+                gear = client.get_gear(strava_activity.gear_id)
+                gear_names[strava_activity.gear_id] = (
+                    f"{gear.name}" or f"{gear.brand_name} {gear.model_name}"
+                )
+
+            time_series_path = (
+                activity_extracted_time_series_dir() / f"{strava_activity.id}.parquet"
+            )
+            if time_series_path.exists():
+                time_series = pd.read_parquet(time_series_path)
+            else:
+                try:
+                    time_series = download_strava_time_series(
+                        strava_activity.id, client
+                    )
+                except ObjectNotFound as e:
+                    logger.error(
+                        f"The activity {strava_activity.id} with name “{strava_activity.name}” cannot be found."
+                        f"Perhaps it is a manual activity without a time series. Ignoring. {e=}"
+                    )
+                    continue
+                time_series.name = strava_activity.id
+                new_time = [
+                    strava_activity.start_date + datetime.timedelta(seconds=time)
+                    for time in time_series["time"]
+                ]
+                del time_series["time"]
+                time_series["time"] = new_time
+                time_series.to_parquet(time_series_path)
+
+            detailed_activity = get_detailed_activity(strava_activity.id, client)
+
+            if len(time_series) > 0 and "latitude" in time_series.columns:
+                activity = Activity()
+                activity.upstream_id = str(strava_activity.id)
+                activity.distance_km = strava_activity.distance / 1000
+                activity.name = strava_activity.name
+                activity.kind = get_or_make_kind(str(strava_activity.type.root))
+                activity.start = strava_activity.start_date.astimezone(
+                    zoneinfo.ZoneInfo("UTC")
+                )
+                activity.elapsed_time = strava_activity.elapsed_time
+                activity.equipment = get_or_make_equipment(
+                    gear_names[strava_activity.gear_id]
+                )
+                activity.calories = detailed_activity.calories
+                activity.moving_time = detailed_activity.moving_time
+
+                update_and_commit(
+                    activity, time_series, config_accessor.activity_import()
+                )
+                logger.info(f"Added activity '{activity.name}' from Strava.")
+
+            if strava_begin is None and strava_end is None:
+                set_state(
+                    strava_last_activity_date_path(),
+                    strava_activity.start_date.isoformat().replace("+00:00", "Z"),
+                )
+
+        limit_exceeded = False
+    except RateLimitExceeded:
+        limit_exceeded = True
+    except Fault as e:
+        if "Too Many Requests" in str(e):
+            limit_exceeded = True
+        else:
+            raise
+
+    return limit_exceeded
+
+
+def download_strava_time_series(activity_id: int, client: Client) -> pd.DataFrame:
+    streams = client.get_activity_streams(
+        activity_id, ["time", "latlng", "altitude", "heartrate", "temp"]
+    )
+    columns = {"time": streams["time"].data}
+    if "latlng" in streams:
+        columns["latitude"] = [elem[0] for elem in streams["latlng"].data]
+        columns["longitude"] = [elem[1] for elem in streams["latlng"].data]
+    for name in ["altitude", "heartrate"]:
+        if name in streams:
+            columns[name] = streams[name].data
+    if "distance" in streams:
+        columns["distance_km"] = pd.Series(streams["distance"].data) / 1000
+
+    df = pd.DataFrame(columns)
+    return df
+
+
+def get_detailed_activity(activity_id: int, client: Client):
+    detailed_activity_path = pathlib.Path(
+        f"Cache/Detailed Activities/{activity_id}.pickle"
+    )
+    if detailed_activity_path.exists():
+        with open(detailed_activity_path, "rb") as f:
+            return pickle.load(f)
+
+    detailed_activity = client.get_activity(activity_id)
+
+    detailed_activity_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(detailed_activity_path, "wb") as f:
+        pickle.dump(detailed_activity, f)
+
+    return detailed_activity

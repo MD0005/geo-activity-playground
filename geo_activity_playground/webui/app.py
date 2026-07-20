@@ -36,15 +36,9 @@ from ..core.datamodel import (
     Activity,
     Equipment,
     Kind,
-    Photo,
     Tag,
-    get_hammerhead_auth,
 )
 from ..core.heart_rate import HeartRateZoneComputer
-from ..core.heatmap_cache import (
-    delete_small_heatmap_cache_entries,
-    import_legacy_heatmap_cache_from_filesystem,
-)
 from ..core.paths import TIME_SERIES_DIR
 from ..core.raster_map import (
     BlankImageTransform,
@@ -54,28 +48,41 @@ from ..core.raster_map import (
     PastelImageTransform,
     TileGetter,
 )
+from ..core.scan import scan_for_activities
+from ..features.activity.blueprint import make_activity_blueprint
+from ..features.activity_photos.blueprint import make_photo_blueprint
+from ..features.activity_photos.model import Photo
+from ..features.authentication.blueprint import make_authentication_blueprint
+from ..features.bubble_chart.blueprint import make_bubble_chart_blueprint
+from ..features.calendar.blueprint import make_calendar_blueprint
+from ..features.data_export.blueprint import make_export_blueprint
+from ..features.eddington.blueprint import register_eddington_blueprint
+from ..features.equipment.blueprint import make_equipment_blueprint
+from ..features.explorer_video.video_blueprint import make_explorer_video_blueprint
+from ..features.hall_of_fame.blueprint import make_hall_of_fame_blueprint
+from ..features.hammerhead.model import get_hammerhead_auth
+from ..features.heatmap.blueprint import make_heatmap_blueprint
+from ..features.heatmap.cache import (
+    delete_small_heatmap_cache_entries,
+    import_legacy_heatmap_cache_from_filesystem,
+)
+from ..features.heatmap.model import HeatmapTileCache  # noqa: F401
+from ..features.plot_builder.blueprint import make_plot_builder_blueprint
+from ..features.plot_builder.model import PlotSpec  # noqa: F401
+from ..features.segments.blueprint import make_segments_blueprint
+from ..features.segments.model import Segment  # noqa: F401
+from ..features.sharepic.blueprint import make_sharepic_blueprint
+from ..features.shutdown.blueprint import make_shutdown_blueprint
+from ..features.square_planner.blueprint import make_square_planner_blueprint
+from ..features.square_planner.model import SquarePlannerBookmark  # noqa: F401
+from ..features.summary.blueprint import make_summary_blueprint
+from ..features.tile.blueprint import make_tile_blueprint
+from ..features.upload.blueprint import make_upload_blueprint
 from .authenticator import Authenticator
-from .blueprints.activity_blueprint import make_activity_blueprint
-from .blueprints.admin_blueprint import make_admin_blueprint
-from .blueprints.auth_blueprint import make_auth_blueprint
-from .blueprints.bubble_chart_blueprint import make_bubble_chart_blueprint
-from .blueprints.calendar_blueprint import make_calendar_blueprint
-from .blueprints.eddington_blueprints import register_eddington_blueprint
 from .blueprints.entry_views import register_entry_views
-from .blueprints.equipment_blueprint import make_equipment_blueprint
 from .blueprints.explorer_blueprint import make_explorer_blueprint
-from .blueprints.export_blueprint import make_export_blueprint
-from .blueprints.hall_of_fame_blueprint import make_hall_of_fame_blueprint
-from .blueprints.heatmap_blueprint import make_heatmap_blueprint
-from .blueprints.photo_blueprint import make_photo_blueprint
-from .blueprints.plot_builder_blueprint import make_plot_builder_blueprint
 from .blueprints.search_blueprint import make_search_blueprint
-from .blueprints.segments_blueprint import make_segments_blueprint
 from .blueprints.settings_blueprint import make_settings_blueprint
-from .blueprints.square_planner_blueprint import make_square_planner_blueprint
-from .blueprints.summary_blueprint import make_summary_blueprint
-from .blueprints.tile_blueprint import make_tile_blueprint
-from .blueprints.upload_blueprint import make_upload_blueprint, scan_for_activities
 from .flasher import FlaskFlasher
 from .i18n import DEFAULT_LANGUAGE, SUPPORTED_LANGUAGE_CODES
 
@@ -339,50 +346,82 @@ def create_app(
     # Register routes and blueprints
     register_entry_views(app, repository, config_accessor)
 
-    blueprints = {
-        "/activity": make_activity_blueprint(
-            repository,
-            authenticator,
-            config_accessor,
-            heart_rate_zone_computer,
+    blueprints = [
+        (
+            "/activity",
+            make_activity_blueprint(
+                repository,
+                authenticator,
+                config_accessor,
+                heart_rate_zone_computer,
+            ),
         ),
-        "/admin": make_admin_blueprint(
-            authenticator, multi_process=http_server == "gunicorn"
+        (
+            "/authentication",
+            make_authentication_blueprint(authenticator, config_accessor, flasher),
         ),
-        "/auth": make_auth_blueprint(authenticator),
-        "/bubble-chart": make_bubble_chart_blueprint(repository),
-        "/calendar": make_calendar_blueprint(repository, config_accessor),
-        "/eddington": register_eddington_blueprint(repository, authenticator),
-        "/equipment": make_equipment_blueprint(repository, config_accessor),
-        "/explorer": make_explorer_blueprint(
-            authenticator,
-            config_accessor,
-            tile_getter,
-            image_transforms,
+        ("/bubble-chart", make_bubble_chart_blueprint(repository)),
+        ("/calendar", make_calendar_blueprint(repository, config_accessor)),
+        ("/eddington", register_eddington_blueprint(repository, authenticator)),
+        ("/equipment", make_equipment_blueprint(repository, config_accessor)),
+        (
+            "/explorer",
+            make_explorer_blueprint(
+                authenticator,
+                config_accessor,
+                tile_getter,
+                image_transforms,
+            ),
         ),
-        "/export": make_export_blueprint(authenticator),
-        "/hall-of-fame": make_hall_of_fame_blueprint(
-            repository, authenticator, config_accessor
+        ("/explorer", make_explorer_video_blueprint(authenticator, config_accessor)),
+        ("/export", make_export_blueprint(authenticator)),
+        (
+            "/hall-of-fame",
+            make_hall_of_fame_blueprint(repository, authenticator, config_accessor),
         ),
-        "/heatmap": make_heatmap_blueprint(repository, config_accessor, authenticator),
-        "/photo": make_photo_blueprint(config_accessor, authenticator, flasher),
-        "/plot-builder": make_plot_builder_blueprint(
-            repository, flasher, authenticator
+        (
+            "/heatmap",
+            make_heatmap_blueprint(repository, config_accessor, authenticator),
         ),
-        "/settings": make_settings_blueprint(
-            config_accessor, authenticator, flasher, repository
+        ("/photo", make_photo_blueprint(config_accessor, authenticator, flasher)),
+        (
+            "/plot-builder",
+            make_plot_builder_blueprint(repository, flasher, authenticator),
         ),
-        "/segments": make_segments_blueprint(authenticator, flasher, config_accessor),
-        "/square-planner": make_square_planner_blueprint(),
-        "/search": make_search_blueprint(authenticator, config_accessor),
-        "/summary": make_summary_blueprint(repository, config_accessor, authenticator),
-        "/tile": make_tile_blueprint(image_transforms, tile_getter),
-        "/upload": make_upload_blueprint(
-            repository, config_accessor, authenticator, flasher
+        (
+            "/settings",
+            make_settings_blueprint(
+                config_accessor, authenticator, flasher, repository
+            ),
         ),
-    }
+        (
+            "/segments",
+            make_segments_blueprint(authenticator, flasher, config_accessor),
+        ),
+        (
+            "/sharepic",
+            make_sharepic_blueprint(repository, config_accessor),
+        ),
+        (
+            "/shutdown",
+            make_shutdown_blueprint(
+                authenticator, multi_process=http_server == "gunicorn"
+            ),
+        ),
+        ("/square-planner", make_square_planner_blueprint()),
+        ("/search", make_search_blueprint(authenticator, config_accessor)),
+        (
+            "/summary",
+            make_summary_blueprint(repository, config_accessor, authenticator),
+        ),
+        ("/tile", make_tile_blueprint(image_transforms, tile_getter)),
+        (
+            "/upload",
+            make_upload_blueprint(repository, config_accessor, authenticator, flasher),
+        ),
+    ]
 
-    for url_prefix, blueprint in blueprints.items():
+    for url_prefix, blueprint in blueprints:
         app.register_blueprint(blueprint, url_prefix=url_prefix)
 
     # Register context processor for global template variables

@@ -1,24 +1,17 @@
-import datetime
 import json
 import logging
 import pathlib
 import re
-import secrets
 import shutil
-import tempfile
-import urllib.parse
-import zipfile
 from typing import Any
 
 import sqlalchemy
 from flask import (
     Blueprint,
-    Response,
     flash,
     redirect,
     render_template,
     request,
-    session,
     url_for,
 )
 from flask_babel import gettext as _
@@ -36,47 +29,40 @@ from ...core.datamodel import (
     ClusterMembership,
     Equipment,
     ExplorerTileBookmark,
-    HammerheadAuth,
-    HeatmapTileCache,
     Kind,
-    Photo,
-    PlotSpec,
     PrivacyZone,
-    Segment,
-    SegmentCheck,
-    SegmentMatch,
-    SquarePlannerBookmark,
     StoredSearchQuery,
     Tag,
     TileVisit,
     UiConfig,
     activity_tag_association_table,
-    get_hammerhead_auth,
     get_or_make_equipment,
     get_or_make_kind,
 )
 from ...core.enrichment import enrichment_set_timezone, update_and_commit
 from ...core.heart_rate import HeartRateZoneComputer
-from ...core.heatmap_cache import delete_all_heatmap_cache, delete_stale_heatmap_cache
-from ...core.paths import strava_api_dir
 from ...core.tag_extraction import apply_tag_extraction, get_tags_with_extraction_regex
 from ...explorer.tile_visits import (
     _reset_tile_visits_db,
     compute_tile_evolution,
     compute_tile_visits_new,
 )
+from ...features.activity_photos.model import Photo
+from ...features.hammerhead.blueprint import register_hammerhead_settings
+from ...features.heatmap.blueprint import register_heatmap_settings
+from ...features.heatmap.model import HeatmapTileCache
+from ...features.plot_builder.model import PlotSpec
+from ...features.segments.model import Segment, SegmentCheck, SegmentMatch
+from ...features.square_planner.model import SquarePlannerBookmark
+from ...features.strava_api.blueprint import register_strava_api_settings
+from ...features.strava_api.importer import refresh_activity_names_from_strava
+from ...features.strava_checkout.blueprint import register_strava_checkout_settings
 from ...importers.activity_parsers import (
     ActivityParseError,
     NoGeoDataError,
     read_activity,
 )
 from ...importers.directory import get_metadata_from_path
-from ...importers.hammerhead_api import (
-    HAMMERHEAD_OAUTH_SCOPE,
-    HammerheadAuthError,
-    exchange_code_for_token,
-)
-from ...importers.strava_api import refresh_activity_names_from_strava
 from ..authenticator import Authenticator, needs_authentication
 from ..columns import TOGGLEABLE_TABLE_COLUMNS
 from ..flasher import Flasher, FlashTypes
@@ -227,68 +213,6 @@ def _wipe_local_state() -> None:
         directory.mkdir(parents=True, exist_ok=True)
 
 
-def _heatmap_cache_stats() -> tuple[int, list[dict[str, Any]]]:
-    grouped_rows = DB.session.execute(
-        sqlalchemy.select(
-            HeatmapTileCache.search_query_id,
-            sqlalchemy.func.count(HeatmapTileCache.id).label("num_tiles"),
-            sqlalchemy.func.sum(HeatmapTileCache.num_activities).label(
-                "num_activities"
-            ),
-            sqlalchemy.func.max(HeatmapTileCache.last_used).label("last_used"),
-        )
-        .group_by(HeatmapTileCache.search_query_id)
-        .order_by(
-            HeatmapTileCache.search_query_id.is_not(None),
-            HeatmapTileCache.search_query_id,
-        )
-    ).all()
-
-    query_ids = [
-        row.search_query_id for row in grouped_rows if row.search_query_id is not None
-    ]
-    query_by_id = {
-        query.id: query
-        for query in DB.session.scalars(
-            sqlalchemy.select(StoredSearchQuery).where(
-                StoredSearchQuery.id.in_(query_ids)
-            )
-        ).all()
-    }
-
-    stats: list[dict[str, Any]] = []
-    total_tiles = 0
-    for row in grouped_rows:
-        search_query_id = row.search_query_id
-        num_tiles = int(row.num_tiles or 0)
-        num_activities = int(row.num_activities or 0)
-        total_tiles += num_tiles
-
-        if search_query_id is None:
-            description = _("No search query")
-            is_favorite = None
-        else:
-            query = query_by_id.get(search_query_id)
-            if query:
-                description = str(query)
-                is_favorite = query.is_favorite
-            else:
-                description = _("Deleted search query #%d") % search_query_id
-                is_favorite = False
-
-        stats.append(
-            {
-                "search_query_id": search_query_id,
-                "description": description,
-                "num_tiles": num_tiles,
-                "num_activities": num_activities,
-                "last_used": row.last_used,
-                "is_favorite": is_favorite,
-            }
-        )
-    return total_tiles, stats
-
-
 def _apply_metadata_extraction_to_existing(config: ActivityImportConfig) -> int:
     activities = DB.session.scalars(
         sqlalchemy.select(Activity).filter(Activity.path.is_not(sqlalchemy.null()))
@@ -318,9 +242,11 @@ def make_settings_blueprint(
     flasher: Flasher,
     repository: ActivityRepository,
 ) -> Blueprint:
-    strava_login_helper = StravaLoginHelper(config_accessor)
-    hammerhead_login_helper = HammerheadLoginHelper()
     blueprint = Blueprint("settings", __name__, template_folder="templates")
+    register_hammerhead_settings(blueprint, authenticator)
+    register_heatmap_settings(blueprint, authenticator, flasher)
+    register_strava_api_settings(blueprint, authenticator, config_accessor)
+    register_strava_checkout_settings(blueprint, authenticator, flasher)
 
     @blueprint.route("/")
     @needs_authentication(authenticator)
@@ -339,28 +265,6 @@ def make_settings_blueprint(
                 compute_tile_evolution(config_accessor.ui())
                 flasher.flash_message(
                     _("Tile visit state has been reset and re-indexed."),
-                    FlashTypes.SUCCESS,
-                )
-            elif action == "reset_heatmap_cache":
-                logger.info("User requested reset of heatmap cache.")
-                dropped = delete_all_heatmap_cache()
-                heatmap_cache_dir = pathlib.Path("Cache/Heatmap")
-                if heatmap_cache_dir.exists():
-                    shutil.rmtree(heatmap_cache_dir)
-                flasher.flash_message(
-                    _("Heatmap cache has been cleared (%(dropped)s tiles).")
-                    % {"dropped": dropped},
-                    FlashTypes.SUCCESS,
-                )
-            elif action == "cleanup_heatmap_cache_stale":
-                logger.info("User requested cleanup of stale heatmap cache.")
-                cutoff = datetime.datetime.now() - datetime.timedelta(days=182)
-                dropped = delete_stale_heatmap_cache(cutoff)
-                flasher.flash_message(
-                    _(
-                        "Dropped %(dropped)s stale heatmap cache tiles (unused for six months)."
-                    )
-                    % {"dropped": dropped},
                     FlashTypes.SUCCESS,
                 )
             elif action == "reenrich_all_activities":
@@ -446,12 +350,7 @@ def make_settings_blueprint(
                     FlashTypes.SUCCESS,
                 )
             return redirect(url_for(".maintenance"))
-        heatmap_cache_total_tiles, heatmap_cache_stats = _heatmap_cache_stats()
-        return render_template(
-            "settings/maintenance.html.j2",
-            heatmap_cache_total_tiles=heatmap_cache_total_tiles,
-            heatmap_cache_stats=heatmap_cache_stats,
-        )
+        return render_template("settings/maintenance.html.j2")
 
     @blueprint.route("/language", methods=["GET", "POST"])
     @needs_authentication(authenticator)
@@ -479,20 +378,6 @@ def make_settings_blueprint(
             "settings/language.html.j2",
             available_languages=SUPPORTED_LANGUAGES,
             current_language=current_language,
-        )
-
-    @blueprint.route("/admin-password", methods=["GET", "POST"])
-    @needs_authentication(authenticator)
-    def admin_password() -> Response:
-        if request.method == "POST":
-            config_accessor.activity_import().upload_password = request.form["password"]
-            config_accessor.save()
-            flasher.flash_message("Updated admin password.", FlashTypes.SUCCESS)
-        return Response(
-            render_template(
-                "settings/admin-password.html.j2",
-                password=config_accessor.activity_import().upload_password,
-            )
         )
 
     @blueprint.route("/cluster-bookmarks/new", methods=["GET", "POST"])
@@ -966,102 +851,6 @@ def make_settings_blueprint(
             ],
         )
 
-    @blueprint.route("/strava", methods=["GET", "POST"])
-    @needs_authentication(authenticator)
-    def strava():
-        if request.method == "POST":
-            strava_client_id = request.form["strava_client_id"]
-            strava_client_secret = request.form["strava_client_secret"]
-            url = strava_login_helper.save_strava(
-                strava_client_id, strava_client_secret
-            )
-            return redirect(url)
-        return render_template(
-            "settings/strava.html.j2", **strava_login_helper.render_strava()
-        )
-
-    @blueprint.route("/strava-upload", methods=["POST"])
-    @needs_authentication(authenticator)
-    def strava_upload():
-        uploaded_archive = request.files.get("strava_checkout_zip")
-        if uploaded_archive is None or uploaded_archive.filename in (None, ""):
-            flasher.flash_message(
-                "Please choose a Strava ZIP archive.", FlashTypes.WARNING
-            )
-            return redirect(url_for(".strava"))
-        if not uploaded_archive.filename.lower().endswith(".zip"):
-            flasher.flash_message(
-                "Only ZIP archives are supported for Strava checkout upload.",
-                FlashTypes.DANGER,
-            )
-            return redirect(url_for(".strava"))
-
-        try:
-            _replace_strava_checkout_from_archive(uploaded_archive.stream)
-        except zipfile.BadZipFile:
-            flasher.flash_message(
-                "The uploaded file is not a valid ZIP archive.", FlashTypes.DANGER
-            )
-            return redirect(url_for(".strava"))
-        except ValueError as error:
-            flasher.flash_message(str(error), FlashTypes.DANGER)
-            return redirect(url_for(".strava"))
-
-        flasher.flash_message(
-            "Uploaded Strava archive and replaced existing checkout.",
-            FlashTypes.SUCCESS,
-        )
-        return redirect(url_for(".strava"))
-
-    @blueprint.route("/strava-callback")
-    @needs_authentication(authenticator)
-    def strava_callback():
-        code = request.args.get("code", type=str)
-        assert code
-        strava_login_helper.save_strava_code(code)
-        return redirect(url_for(".strava"))
-
-    @blueprint.route("/strava-disconnect", methods=["POST"])
-    @needs_authentication(authenticator)
-    def strava_disconnect():
-        strava_login_helper.disconnect_strava()
-        return redirect(url_for(".strava"))
-
-    @blueprint.route("/hammerhead", methods=["GET", "POST"])
-    @needs_authentication(authenticator)
-    def hammerhead():
-        if request.method == "POST":
-            client_id = request.form["hammerhead_client_id"].strip()
-            client_secret = request.form["hammerhead_client_secret"].strip()
-            url = hammerhead_login_helper.save_hammerhead(client_id, client_secret)
-            return redirect(url)
-        return render_template(
-            "settings/hammerhead.html.j2",
-            **hammerhead_login_helper.render_hammerhead(),
-        )
-
-    @blueprint.route("/hammerhead-callback")
-    @needs_authentication(authenticator)
-    def hammerhead_callback():
-        code = request.args.get("code", type=str)
-        assert code
-        state = request.args.get("state", type=str)
-        expected_state = session.pop("hammerhead_oauth_state", None)
-        if not expected_state or state != expected_state:
-            flash(
-                _("Hammerhead authorization failed: invalid or missing state."),
-                category="danger",
-            )
-            return redirect(url_for(".hammerhead"))
-        hammerhead_login_helper.save_hammerhead_code(code)
-        return redirect(url_for(".hammerhead"))
-
-    @blueprint.route("/hammerhead-disconnect", methods=["POST"])
-    @needs_authentication(authenticator)
-    def hammerhead_disconnect():
-        hammerhead_login_helper.disconnect_hammerhead()
-        return redirect(url_for(".hammerhead"))
-
     @blueprint.route("/tags")
     @needs_authentication(authenticator)
     def tags_list():
@@ -1200,103 +989,6 @@ def _wrap_coordinates(coordinates: list[list[float]]) -> dict:
     }
 
 
-class StravaLoginHelper:
-    def __init__(self, config_accessor: ConfigAccessor) -> None:
-        self._config_accessor = config_accessor
-
-    def render_strava(self) -> dict:
-        return {
-            "strava_client_id": self._config_accessor.strava().strava_client_id,
-            "strava_client_secret": self._config_accessor.strava().strava_client_secret,
-            "strava_client_code": self._config_accessor.strava().strava_client_code,
-        }
-
-    def save_strava(self, client_id: str, client_secret: str) -> str:
-        self._strava_client_id = client_id
-        self._strava_client_secret = client_secret
-
-        payload = {
-            "client_id": client_id,
-            "redirect_uri": url_for(".strava_callback", _external=True),
-            "response_type": "code",
-            "scope": "activity:read_all",
-        }
-
-        arg_string = "&".join(
-            f"{key}={urllib.parse.quote(value)}" for key, value in payload.items()
-        )
-        return f"https://www.strava.com/oauth/authorize?{arg_string}"
-
-    def save_strava_code(self, code: str) -> None:
-        self._config_accessor.strava().strava_client_id = int(self._strava_client_id)
-        self._config_accessor.strava().strava_client_secret = self._strava_client_secret
-        self._config_accessor.strava().strava_client_code = code
-        self._config_accessor.save()
-        flash("Connected to Strava API", category="success")
-
-    def disconnect_strava(self) -> None:
-        self._config_accessor.strava().strava_client_code = None
-        self._config_accessor.save()
-        (strava_api_dir() / "strava_tokens.json").unlink(missing_ok=True)
-        flash(_("Disconnected from Strava API"), category="success")
-
-
-class HammerheadLoginHelper:
-    def render_hammerhead(self) -> dict:
-        auth = DB.session.scalar(sqlalchemy.select(HammerheadAuth).limit(1))
-        return {
-            "hammerhead_client_id": auth.client_id if auth else None,
-            "hammerhead_client_secret": auth.client_secret if auth else None,
-            "hammerhead_client_code": auth.client_code if auth else None,
-        }
-
-    def save_hammerhead(self, client_id: str, client_secret: str) -> str:
-        auth = get_hammerhead_auth()
-        auth.client_id = client_id
-        auth.client_secret = client_secret
-        auth.redirect_uri = url_for(".hammerhead_callback", _external=True)
-        DB.session.commit()
-
-        state = secrets.token_urlsafe(32)
-        session["hammerhead_oauth_state"] = state
-
-        payload = {
-            "client_id": client_id,
-            "redirect_uri": auth.redirect_uri,
-            "response_type": "code",
-            "scope": HAMMERHEAD_OAUTH_SCOPE,
-            "state": state,
-        }
-
-        arg_string = "&".join(
-            f"{key}={urllib.parse.quote(value)}" for key, value in payload.items()
-        )
-        return f"https://api.hammerhead.io/v1/auth/oauth/authorize?{arg_string}"
-
-    def save_hammerhead_code(self, code: str) -> None:
-        auth = get_hammerhead_auth()
-        auth.client_code = code
-        DB.session.commit()
-        try:
-            exchange_code_for_token(auth)
-        except HammerheadAuthError as e:
-            flash(
-                _("Could not connect to Hammerhead API: %(error)s", error=str(e)),
-                category="danger",
-            )
-            return
-        flash(_("Connected to Hammerhead API"), category="success")
-
-    def disconnect_hammerhead(self) -> None:
-        auth = get_hammerhead_auth()
-        auth.client_code = None
-        auth.access_token = None
-        auth.refresh_token = None
-        auth.expires_at = None
-        DB.session.commit()
-        flash(_("Disconnected from Hammerhead API"), category="success")
-
-
 def save_privacy_zones(zone_names: list[str], zone_geojsons: list[str]) -> None:
     assert len(zone_names) == len(zone_geojsons)
     new_zone_config = {}
@@ -1372,39 +1064,3 @@ def _split_hex_into_color_alpha(color_str: str) -> tuple[str, int]:
 
 def _combine_color(color: str, alpha: int) -> str:
     return f"{color}{alpha:02x}"
-
-
-def _replace_strava_checkout_from_archive(zip_stream) -> None:
-    target_dir = pathlib.Path("Strava Export")
-    with tempfile.TemporaryDirectory(prefix="strava-upload-") as temp_dir_str:
-        temp_dir = pathlib.Path(temp_dir_str)
-        with zipfile.ZipFile(zip_stream) as archive:
-            for zip_entry in archive.infolist():
-                _extract_zip_entry(archive, zip_entry, temp_dir)
-
-        if target_dir.exists():
-            shutil.rmtree(target_dir)
-        target_dir.mkdir(parents=True, exist_ok=True)
-
-        for path in temp_dir.iterdir():
-            shutil.move(str(path), target_dir / path.name)
-
-
-def _extract_zip_entry(
-    archive: zipfile.ZipFile, zip_entry: zipfile.ZipInfo, destination_dir: pathlib.Path
-) -> None:
-    raw_name = zip_entry.filename.replace("\\", "/")
-    member_path = pathlib.PurePosixPath(raw_name)
-    if member_path.is_absolute() or ".." in member_path.parts:
-        raise ValueError("ZIP archive contains invalid paths.")
-    if not member_path.parts:
-        return
-
-    target_path = destination_dir.joinpath(*member_path.parts)
-    if zip_entry.is_dir():
-        target_path.mkdir(parents=True, exist_ok=True)
-        return
-
-    target_path.parent.mkdir(parents=True, exist_ok=True)
-    with archive.open(zip_entry) as source_file, open(target_path, "wb") as target_file:
-        shutil.copyfileobj(source_file, target_file)
