@@ -17,13 +17,28 @@ Types of changes
 
 ## Unreleased
 
+Added:
+
+- Add a per-equipment detail page with its usage plots and an edit form for the name and usage offset, linked from the equipment overview. Creating equipment also moved here from the settings page.
+- Add pictures per equipment.
+- Add a maintenance cost flow chart to each equipment's detail page, showing the cost of that equipment's maintenance actions broken down by title.
+- Show a "Due maintenance tasks" box on the landing page listing overdue recurring tasks across all equipment.
+- Record activity files that fail to import (parse errors, no geospatial data, empty time series) in a new "Broken Activity Files" settings page instead of just logging a warning on every import scan. Files are only retried once their content changes, or after being retried manually from that page. ([GH-472](https://github.com/martin-ueding/geo-activity-playground/issues/472))
+
 Changed:
 
 - Move all application settings from the `config.json` file into the database, split across domain-grouped tables (heart rate, Strava, activity import, UI, and map). Settings are seeded once from an existing `config.json` on the next start, after which the database is authoritative and the file can be deleted. Privacy zones now live in their own database table instead of the config file.
+- Replace the equipment overview table with Bootstrap cards showing each equipment's usage, first use and last use, linking to its new detail page.
+
+Removed:
+
+- Remove the `/settings/manage-equipments` bulk-edit page; editing and creating equipment now happens on the equipment pages instead.
 
 Fixed:
 
 - Fix a crash when recomputing segments after changing the time-gap threshold. The reprocessing now uses the raw time series (matching the re-enrich and repair actions) instead of the trimmed series, which caused an out-of-bounds index for trimmed activities.
+- Fix the maintenance "Cost vs. usage" plot to show one point per equipment (total cost against total distance) instead of one point per maintenance action against the odometer reading at the time, which made it hard to interpret.
+- Use a root-relative tile URL in the explorer's `style.json` instead of one built from `request.url_root`, which produced `http://` URLs behind an SSL-terminating reverse proxy and made browsers block the tiles as mixed content. ([GH-470](https://github.com/martin-ueding/geo-activity-playground/issues/470))
 
 Removed:
 

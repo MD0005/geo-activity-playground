@@ -1,8 +1,6 @@
 # Bike Maintenance Tracker
 
-(This feature doesn't exist yet, we're [working backwards](https://workingbackwards.com/concepts/working-backwards-pr-faq-process/) from the documentation to the implementation.)
-
-Besides tracking your activities, you can also track maintenance on your bikes.
+Besides tracking your activities, you can also track maintenance actions on your bikes.
 
 ## Data model
 
@@ -10,8 +8,8 @@ There are maintenance trackers tailored for professional athletes, like [ProBike
 
 In the current state, we have these entities:
 
-- **Equipment**: A bike, a pair of running shoes. Each *activity* can be associated with exactly one _equipment_. The equipment's mileage (cumulative distance traveled) is computed as the sum of all activities associated with the _equipment_, plus a manual offset from non-tracked activities.
-- **Maintenance Action**: A deliberately broad action that was done on the _equipment_. It has a title and is associated with a date, a mileage, a cost and optionally a photo.
+- **Equipment**: A bike, a pair of running shoes. Each *activity* can be associated with exactly one _equipment_. The equipment's usage (mileage) is computed as the sum of all activities associated with the _equipment_, plus a manual offset from non-tracked activities.
+- **Maintenance Action**: A deliberately broad action that was done on the _equipment_. It has a title, description (Markdown) and is associated with a date, a usage, a cost and optionally photos.
 - **Recurring Task**: A task is something that needs to be checked or done on a specific _equipment_, but isn't a _maintenance action_ in itself. These are things like “apply chain lube”, “check tire pressure”. Each _task_ has a title, an interval in days and/or an interval in kilometers.
 - **Task Execution**: When a _task_ is executed, it is logged with the date and the mileage of the _equipment_ when it was executed.
 
@@ -28,16 +26,18 @@ erDiagram
         str description
         int equipment_id
         datetime date
-        int mileage_km
+        int usage_km
     }
     MAINTENANCE_ACTION_PHOTO {
         int id
-        str title
+        str caption
         int maintenance_action_id
+        str filename
     }
     RECURRING_TASK {
         int id
         str title
+        str description
         int interval_days
         int interval_km
     }
@@ -46,7 +46,7 @@ erDiagram
         int task_id
         str comment
         datetime date
-        int mileage_km
+        int usage_km
     }
 
     EQUIPMENT ||--o{ MAINTENANCE_ACTION : has

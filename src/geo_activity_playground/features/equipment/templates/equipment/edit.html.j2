@@ -1,0 +1,53 @@
+{% extends "page.html.j2" %}
+
+{% block container %}
+<nav aria-label="breadcrumb" class="mb-3">
+    <ol class="breadcrumb">
+        <li class="breadcrumb-item"><a href="{{ url_for('.index') }}">{{ _('Equipment') }}</a></li>
+        {% if equipment %}
+        <li class="breadcrumb-item"><a href="{{ url_for('.show', id=equipment.id) }}">{{ equipment.name }}</a></li>
+        <li class="breadcrumb-item active" aria-current="page">{{ _('Edit') }}</li>
+        {% else %}
+        <li class="breadcrumb-item active" aria-current="page">{{ _('New') }}</li>
+        {% endif %}
+    </ol>
+</nav>
+<div class="row mb-3">
+    <div class="col">
+        <h1>{{ _('Edit equipment') if equipment else _('New equipment') }}</h1>
+    </div>
+</div>
+
+<div class="row mb-3">
+    <div class="col-md-6">
+        <form method="POST" enctype="multipart/form-data">
+            <div class="mb-3">
+                <label for="name" class="form-label">{{ _('Name') }}</label>
+                <input type="text" class="form-control" id="name" name="name" value="{{ equipment.name if equipment else '' }}" required />
+            </div>
+
+            <div class="mb-3">
+                <label for="offset_km" class="form-label">{{ _('Usage offset / km') }}</label>
+                <input type="number" class="form-control" id="offset_km" name="offset_km" value="{{ equipment.offset_km if equipment else 0 }}" />
+            </div>
+
+            <div class="mb-3">
+                <label for="image" class="form-label">{{ _('Image') }}</label>
+                {% if equipment and equipment.picture_filename %}
+                <div class="mb-2">
+                    <img src="{{ url_for('pictures.get', kind='internal', filename=equipment.picture_filename, size=128) }}" />
+                </div>
+                {% endif %}
+                <input type="file" class="form-control" id="image" name="image" accept="image/*" />
+            </div>
+
+            <button type="submit" class="btn btn-primary">{{ _('Save') }}</button>
+            {% if equipment %}
+            <a href="{{ url_for('.show', id=equipment.id) }}" class="btn btn-secondary">{{ _('Cancel') }}</a>
+            {% else %}
+            <a href="{{ url_for('.index') }}" class="btn btn-secondary">{{ _('Cancel') }}</a>
+            {% endif %}
+        </form>
+    </div>
+</div>
+{% endblock %}

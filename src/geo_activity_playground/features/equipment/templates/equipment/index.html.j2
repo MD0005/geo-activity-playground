@@ -1,0 +1,43 @@
+{% extends "page.html.j2" %}
+
+{% block container %}
+<div class="row mb-3">
+    <div class="col">
+        <h1>{{ _('Equipment') }}</h1>
+    </div>
+    {% if is_authenticated %}
+    <div class="col-auto">
+        <a href="{{ url_for('.new') }}" class="btn btn-secondary">{{ _('New equipment') }}</a>
+    </div>
+    {% endif %}
+</div>
+
+<div class="row mb-3">
+    {% for equipment in equipment_summary %}
+    <div class="col-md-4 mb-3">
+        <div class="card h-100">
+            {% if equipment.picture_filename %}
+            <img src="{{ url_for('pictures.get', kind='internal', filename=equipment.picture_filename, size=512) }}" class="card-img-top" />
+            {% endif %}
+            <div class="card-body">
+                <h5 class="card-title">
+                    <a href="{{ url_for('.show', id=equipment.id) }}">{{ equipment.equipment }}</a>
+                </h5>
+                <p class="card-text">
+                    {{ _('Usage') }}: {{ equipment.total_distance_km }} km<br>
+                    {{ _('First use') }}: {{ equipment.first_use }}<br>
+                    {{ _('Last use') }}: {{ equipment.last_use }}
+                </p>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+
+<div class="row mb-3">
+    <div class="col">
+        <h2>{{ _('Monthly Equipment Usage') }}</h2>
+        {{ vega_direct(stacked_area_chart) }}
+    </div>
+</div>
+{% endblock %}

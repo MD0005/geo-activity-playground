@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="en">
+
+{% from "plot-macros.html.j2" import vega, vega_direct, activity_tag, tabbed_vega %}
+
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+
+    <title>{{ _('Geo Activity Playground') }}</title>
+
+    <!-- Bootstrap CSS. -->
+    <link href="/static/bootstrap/bootstrap.min.css" rel="stylesheet">
+
+    <!-- Leaflet for interactive maps. -->
+    <link rel="stylesheet" href="/static/leaflet/leaflet.css" />
+    <script src="/static/leaflet/leaflet.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/leaflet-relief@1.5.0/dist/leaflet-relief.min.js"></script>
+
+    <!-- Fullscreen button for Leaflet. -->
+    <link href='/static/leaflet/leaflet.fullscreen.css' rel='stylesheet' />
+    <script src='/static/leaflet/Leaflet.fullscreen.min.js'></script>
+
+    <link rel="stylesheet" href="/static/leaflet/MarkerCluster.css" />
+    <link rel="stylesheet" href="/static/leaflet/MarkerCluster.Default.css" />
+    <link rel="stylesheet" href="/static/site.css" />
+    <script src="/static/leaflet/leaflet.markercluster.js"></script>
+
+    <script src="/static/leaflet/leaflet-simplestyle.min.js"></script>
+    <script src="/static/progress-markers.js"></script>
+
+    <!-- Vega for plots.-->
+    <script src="/static/vega/vega@6.js"></script>
+    <script src="/static/vega/vega-lite@6.js"></script>
+    <script src="/static/vega/vega-embed@7.js"></script>
+
+    <script src="/static/bootstrap/bootstrap-dark-mode.js"></script>
+
+    <script src="/static/table-sort.min.js"></script>
+
+    <!-- Favicon. -->
+    <link rel="apple-touch-icon" sizes="180x180" href="/static/favicons/apple-touch-icon.png">
+    <link rel="icon" type="image/png" sizes="32x32" href="/static/favicons/favicon-32x32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="/static/favicons/favicon-16x16.png">
+    <link rel="manifest" href="/static/favicons/site.webmanifest">
+    <link rel="shortcut icon" href="/static/favicons/favicon.ico">
+    <meta name="msapplication-TileColor" content="#da532c">
+    <meta name="msapplication-config" content="/static/favicons/browserconfig.xml">
+    <meta name="theme-color" content="#ffffff">
+</head>
+
+<body>
+    <div class="container">
+        <nav class="navbar navbar-expand-lg bg-body-secondary mb-3">
+            <div class="container-fluid">
+                <a class="navbar-brand" href="{{ url_for('index') }}">{{ _('Geo Activity Playground') }}</a>
+                <button class="navbar-toggler" type="button" data-bs-toggle="collapse"
+                    data-bs-target="#navbarSupportedContent" aria-controls="navbarSupportedContent"
+                    aria-expanded="false" aria-label="{{ _('Toggle navigation') }}">
+                    <span class="navbar-toggler-icon"></span>
+                </button>
+                <div class="collapse navbar-collapse" id="navbarSupportedContent">
+                    <ul class="navbar-nav me-auto mb-2 mb-lg-0">
+
+                        {% if num_activities > 0 %}
+                        <li class="nav-item dropdown">
+                            <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown"
+                                aria-expanded="false">
+                                {{ _('Activities') }}
+                            </a>
+                            <ul class="dropdown-menu">
+                                <li><a class="dropdown-item" href="{{ url_for('calendar.index') }}">{{ _('Calendar')
+                                        }}</a></li>
+                                <li><a class="dropdown-item" href="{{ url_for('search.index') }}">{{ _('Overview &
+                                        Search') }}</a>
+                                </li>
+                                <li><a class="dropdown-item" href="{{ url_for('search.map_view') }}">{{ _('Search as
+                                        Map') }}</a>
+                                </li>
+                                <li><a class="dropdown-item" href="{{ url_for('bubble_chart.index') }}">{{ _('Bubble
+                                        Chart') }}</a>
+                                </li>
+                            </ul>
+                        </li>
+
+                        <li class="nav-item dropdown">
+                            <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown"
+                                aria-expanded="false">
+                                {{ _('Statistics') }}
+                            </a>
+                            <ul class="dropdown-menu">
+                                <li><a class="dropdown-item" href="{{ url_for('summary.index') }}">{{ _('Summary
+                                        Statistics') }}</a>
+                                </li>
+                                <li><a class="dropdown-item" href="{{ url_for('calendar.wrap_latest') }}">{{ _('Year & Month Wrap') }}</a>
+                                </li>
+                                <li><a class="dropdown-item" href="{{ url_for('hall_of_fame.index') }}">{{ _('Hall of
+                                        Fame') }}</a>
+                                </li>
+                                <li><a class="dropdown-item" href="{{ url_for('eddington.distance') }}">{{ _('Eddington
+                                        Number') }}</a>
+                                </li>
+                                <li><a class="dropdown-item" href="{{ url_for('eddington.elevation_gain') }}">{{
+                                        _('Elevation Eddington Number') }}</a>
+                                </li>
+                                <li><a class="dropdown-item" href="{{ url_for('equipment.index') }}">{{ _('Equipment')
+                                        }}</a></li>
+                                <li><a class="dropdown-item" href="{{ url_for('maintenance.index') }}">{{
+                                        _('Maintenance') }}</a></li>
+                                <li><a class="dropdown-item" href="{{ url_for('segments.index') }}">{{ _('Segments')
+                                        }}</a></li>
+                            </ul>
+                        </li>
+
+                        <li class="nav-item dropdown">
+                            <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown"
+                                aria-expanded="false">
+                                {{ _('Explorer') }}
+                            </a>
+                            <ul class="dropdown-menu">
+                                <li><a class="dropdown-item" href="{{ url_for('explorer.server_side', zoom=14) }}">{{
+                                        _('Explorer Tiles (Zoom 14)') }}</a></li>
+                                <li><a class="dropdown-item" href="{{ url_for('explorer.server_side', zoom=17) }}">{{
+                                        _('Squadratinhos (Zoom 17)') }}</a></li>
+                                <li><a class="dropdown-item" href="{{ url_for('explorer_video.video') }}">{{
+                                        _('Explorer Video Export') }}</a></li>
+
+                                <li>
+                                    <hr class="dropdown-divider">
+                                </li>
+
+                                <li><a class="dropdown-item" href="{{ url_for('square_planner.landing', zoom=14) }}">{{
+                                        _('Square Planner (Zoom 14)') }}</a></li>
+                                <li><a class="dropdown-item" href="{{ url_for('square_planner.landing', zoom=17) }}">{{
+                                        _('Square Planner (Zoom 17)') }}</a></li>
+                            </ul>
+                        </li>
+
+                        <li class="nav-item">
+                            <a class="nav-link" aria-current="page" href="{{ url_for('heatmap.index') }}">{{
+                                _('Heatmap') }}</a>
+                        </li>
+                        {% endif %}
+
+                        {% if photo_count > 0 %}
+                        <li class="nav-item">
+                            <a class="nav-link" aria-current="page" href="{{ url_for('photo.map') }}">{{ _('Photo Map')
+                                }}</a>
+                        </li>
+                        {% endif %}
+
+                        <li class="nav-item dropdown">
+                            <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown"
+                                aria-expanded="false">
+                                {{ _('Admin') }}
+                            </a>
+                            <ul class="dropdown-menu">
+                                <li><a class="dropdown-item" href="{{ url_for('upload.index') }}">{{ _('Upload
+                                        Activities') }}</a>
+                                </li>
+                                <li><a class="dropdown-item" href="{{ url_for('photo.new') }}">{{ _('Upload Photos')
+                                        }}</a>
+                                </li>
+                                <li><a class="dropdown-item" href="{{ url_for('upload.reload') }}">{{ _('Scan New
+                                        Activities') }}</a>
+                                </li>
+
+                                <li>
+                                    <hr class="dropdown-divider">
+                                </li>
+
+                                <li><a class="dropdown-item" href="{{ url_for('plot_builder.index') }}">{{ _('Plot
+                                        Builder') }}</a>
+                                </li>
+                                <li><a class="dropdown-item" href="{{ url_for('settings.index') }}">{{ _('Settings')
+                                        }}</a></li>
+                                <li><a class="dropdown-item" href="{{ url_for('export.index') }}">{{ _('Data Export')
+                                        }}</a></li>
+                                <li>
+                                    <hr class="dropdown-divider">
+                                </li>
+
+                                <li>
+                                    <form action="{{ url_for('shutdown.shutdown') }}" method="POST" style="margin: 0;"
+                                        onsubmit="return confirm('{{ _('Are you sure you want to shut down the server? This will terminate the application.') }}');">
+                                        <button type="submit" class="dropdown-item text-danger">{{ _('Shutdown Server')
+                                            }}</button>
+                                    </form>
+                                </li>
+                            </ul>
+                        </li>
+
+                        <li class="nav-item dropdown">
+                            <button
+                                class="btn btn-link nav-link py-2 px-0 px-lg-2 dropdown-toggle d-flex align-items-center"
+                                id="bd-theme" type="button" aria-expanded="false" data-bs-toggle="dropdown"
+                                data-bs-display="static" aria-label="{{ _('Toggle theme') }}">
+                                <span id="bd-theme-text">{{ _('Theme') }}</span>
+                            </button>
+                            <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="bd-theme-text">
+                                <li>
+                                    <button type="button" class="dropdown-item d-flex align-items-center"
+                                        data-bs-theme-value="light" aria-pressed="false">
+                                        ☀️ {{ _('Light') }}
+                                    </button>
+                                </li>
+                                <li>
+                                    <button type="button" class="dropdown-item d-flex align-items-center active"
+                                        data-bs-theme-value="dark" aria-pressed="true">
+                                        🌙 {{ _('Dark') }}
+                                    </button>
+                                </li>
+                                <li>
+                                    <button type="button" class="dropdown-item d-flex align-items-center"
+                                        data-bs-theme-value="auto" aria-pressed="false">
+                                        ⚙️ {{ _('Auto') }}
+                                    </button>
+                                </li>
+                            </ul>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+        </nav>
+
+        {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+        {% for category, message in messages %}
+        <div class="alert alert-{{ category }}" role="alert">
+            {{ message }}
+        </div>
+        {% endfor %}
+        {% endif %}
+        {% endwith %}
+
+        {% block container %}
+        {% endblock %}
+
+        <div class="row border-top py-3 my-4">
+            <ul class="nav col-4">
+                <li class="nav-item"><a
+                        href="https://github.com/martin-ueding/geo-activity-playground/blob/main/docs/changelog.md"
+                        class="nav-link px-2 text-muted" target="_blank">{{ _('Version') }} {{ version }}</a></li>
+
+                <li class="nav-item"><span class="nav-link px-2 text-muted">Python {{ python_version
+                        }}</span></li>
+            </ul>
+            <ul class="nav col-8 justify-content-end">
+                <li class="nav-item"><a href="https://github.com/martin-ueding/geo-activity-playground"
+                        class="nav-link px-2 text-muted" target="_blank">GitHub</a></li>
+                <li class="nav-item"><a href="https://martin-ueding.github.io/geo-activity-playground/"
+                        class="nav-link px-2 text-muted" target="_blank">{{ _('Documentation') }}</a></li>
+                <li class="nav-item"><a href="https://bonn.social/tags/GeoActivityPlayground"
+                        class="nav-link px-2 text-muted" target="_blank">Mastodon</a></li>
+                <li class="nav-item"><a href="https://pypi.org/project/geo-activity-playground/"
+                        class="nav-link px-2 text-muted" target="_blank">PyPI</a></li>
+                <li class="nav-item"><a href="https://martin-ueding.de/" class="nav-link px-2 text-muted">Martin
+                        Ueding</a></li>
+            </ul>
+        </div>
+    </div>
+
+    <script src="/static/bootstrap/bootstrap.bundle.min.js"></script>
+</body>
+
+</html>

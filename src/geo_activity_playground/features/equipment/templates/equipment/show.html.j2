@@ -1,0 +1,65 @@
+{% extends "page.html.j2" %}
+
+{% block container %}
+<nav aria-label="breadcrumb" class="mb-3">
+    <ol class="breadcrumb">
+        <li class="breadcrumb-item"><a href="{{ url_for('.index') }}">{{ _('Equipment') }}</a></li>
+        <li class="breadcrumb-item active" aria-current="page">{{ equipment.name }}</li>
+    </ol>
+</nav>
+<div class="row mb-3">
+    {% if equipment.picture_filename %}
+    <div class="col-auto">
+        <img src="{{ url_for('pictures.get', kind='internal', filename=equipment.picture_filename, size=128) }}" />
+    </div>
+    {% endif %}
+    <div class="col">
+        <h1>{{ equipment.name }}</h1>
+    </div>
+    {% if is_authenticated %}
+    <div class="col-auto">
+        <a href="{{ url_for('.edit', id=equipment.id) }}" class="btn btn-secondary">{{ _('Edit') }}</a>
+    </div>
+    {% endif %}
+</div>
+
+<div class="row mb-3">
+    <div class="col">
+        <dl class="row">
+            <dt class="col-sm-3">{{ _('Usage') }}</dt>
+            <dd class="col-sm-9">{{ usage_km }} km</dd>
+            <dt class="col-sm-3">{{ _('Usage offset') }}</dt>
+            <dd class="col-sm-9">{{ equipment.offset_km }} km</dd>
+        </dl>
+    </div>
+</div>
+
+<div class="row mb-3">
+    <div class="col-md-4">
+        {{ vega_direct(plots.total_distances_plot) }}
+    </div>
+    <div class="col-md-4">
+        {{ vega_direct(plots.yearly_distance_plot) }}
+    </div>
+    <div class="col-md-4">
+        {{ vega_direct(plots.usages_plot) }}
+    </div>
+</div>
+
+{% if flow_plot %}
+<div class="row mb-3">
+    <div class="col">
+        {{ vega_direct(flow_plot) }}
+    </div>
+</div>
+{% endif %}
+
+<div class="row mb-3">
+    <div class="col-md-6">
+        {% include "maintenance/_actions_list.html.j2" %}
+    </div>
+    <div class="col-md-6">
+        {% include "maintenance/_tasks_list.html.j2" %}
+    </div>
+</div>
+{% endblock %}
