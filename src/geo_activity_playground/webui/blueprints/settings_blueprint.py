@@ -1,3 +1,4 @@
+import decimal
 import json
 import logging
 import pathlib
@@ -5,6 +6,7 @@ import re
 import shutil
 from typing import Any
 
+import babel.numbers
 import sqlalchemy
 from flask import (
     Blueprint,
@@ -19,16 +21,13 @@ from tqdm import tqdm
 
 from ...core.activities import ActivityRepository
 from ...core.config import ConfigAccessor
+from ...core.currency import format_money
 from ...core.datamodel import (
     DB,
     Activity,
     ActivityImportConfig,
     ActivityTile,
-    ClusterHistoryCheckpoint,
-    ClusterHistoryEvent,
-    ClusterMembership,
     Equipment,
-    ExplorerTileBookmark,
     Kind,
     PrivacyZone,
     StoredSearchQuery,
@@ -39,23 +38,29 @@ from ...core.datamodel import (
 )
 from ...core.enrichment import enrichment_set_timezone, update_and_commit
 from ...core.heart_rate import HeartRateZoneComputer
+from ...core.import_exclusion import ImportExclusion
 from ...core.tag_extraction import apply_tag_extraction, get_tags_with_extraction_regex
-from ...explorer.tile_visits import (
+from ...core.tile_visits import (
     _reset_tile_visits_db,
-    compute_tile_evolution,
     compute_tile_visits_new,
 )
 from ...features.activity_photos.model import Photo
 from ...features.directory_import.blueprint import register_directory_import_settings
+from ...features.explorer.clustering import compute_tile_evolution
+from ...features.explorer.model import (
+    ClusterHistoryCheckpoint,
+    ClusterHistoryEvent,
+    ClusterMembership,
+    ExplorerTileBookmark,
+)
 from ...features.hammerhead.blueprint import register_hammerhead_settings
 from ...features.heatmap.blueprint import register_heatmap_settings
 from ...features.heatmap.model import HeatmapTileCache
 from ...features.plot_builder.model import PlotSpec
 from ...features.segments.model import Segment, SegmentCheck, SegmentMatch
 from ...features.square_planner.model import SquarePlannerBookmark
-from ...features.strava_api.blueprint import register_strava_api_settings
-from ...features.strava_api.importer import refresh_activity_names_from_strava
-from ...features.strava_checkout.blueprint import register_strava_checkout_settings
+from ...features.strava.api_importer import refresh_activity_names_from_strava
+from ...features.strava.blueprint import register_strava_settings
 from ...importers.activity_parsers import (
     ActivityParseError,
     NoGeoDataError,
@@ -67,6 +72,16 @@ from ..flasher import Flasher, FlashTypes
 from ..i18n import SUPPORTED_LANGUAGES
 
 logger = logging.getLogger(__name__)
+
+
+def _import_exclusion_reasons() -> dict[str, str]:
+    return {
+        "no_geo_data": _("No geospatial data"),
+        "parse_error": _("Parse error"),
+        "empty_time_series": _("Empty time series"),
+        "deleted_by_user": _("Deleted by user"),
+    }
+
 
 VEGA_COLOR_SCHEMES_CONTINUOUS = [
     "lightgreyred",
@@ -195,6 +210,7 @@ def _truncate_user_content_tables() -> None:
     DB.session.execute(sqlalchemy.delete(PlotSpec))
     DB.session.execute(sqlalchemy.delete(HeatmapTileCache))
     DB.session.execute(sqlalchemy.delete(StoredSearchQuery))
+    DB.session.execute(sqlalchemy.delete(ImportExclusion))
     DB.session.commit()
 
 
@@ -223,13 +239,56 @@ def make_settings_blueprint(
     )
     register_hammerhead_settings(blueprint, authenticator)
     register_heatmap_settings(blueprint, authenticator, flasher)
-    register_strava_api_settings(blueprint, authenticator, config_accessor)
-    register_strava_checkout_settings(blueprint, authenticator, flasher)
+    register_strava_settings(blueprint, authenticator, config_accessor, flasher)
 
     @blueprint.route("/")
     @needs_authentication(authenticator)
     def index():
         return render_template("settings/index.html.j2")
+
+    @blueprint.route("/excluded-activities")
+    @needs_authentication(authenticator)
+    def excluded_activities():
+        exclusions = DB.session.scalars(
+            sqlalchemy.select(ImportExclusion).order_by(
+                ImportExclusion.last_attempt.desc()
+            )
+        ).all()
+        return render_template(
+            "settings/excluded-activities.html.j2",
+            exclusions=exclusions,
+            reasons=_import_exclusion_reasons(),
+        )
+
+    @blueprint.route("/excluded-activities/reimport/<int:id>", methods=["POST"])
+    @needs_authentication(authenticator)
+    def excluded_activity_reimport(id: int):
+        exclusion = DB.session.get_one(ImportExclusion, id)
+        DB.session.delete(exclusion)
+        DB.session.commit()
+        flasher.flash_message(
+            _("The activity will be imported again on the next import scan."),
+            FlashTypes.SUCCESS,
+        )
+        return redirect(url_for(".excluded_activities"))
+
+    @blueprint.route("/excluded-activities/reimport-all", methods=["POST"])
+    @needs_authentication(authenticator)
+    def excluded_activities_reimport_all():
+        count = DB.session.execute(
+            sqlalchemy.delete(ImportExclusion).where(
+                ImportExclusion.reason != "deleted_by_user"
+            )
+        ).rowcount
+        DB.session.commit()
+        flasher.flash_message(
+            _(
+                "Cleared %(count)s failed imports. They will be retried on the next import scan."
+            )
+            % {"count": count},
+            FlashTypes.SUCCESS,
+        )
+        return redirect(url_for(".excluded_activities"))
 
     @blueprint.route("/maintenance", methods=["GET", "POST"])
     @needs_authentication(authenticator)
@@ -356,6 +415,30 @@ def make_settings_blueprint(
             "settings/language.html.j2",
             available_languages=SUPPORTED_LANGUAGES,
             current_language=current_language,
+        )
+
+    @blueprint.route("/currency", methods=["GET", "POST"])
+    @needs_authentication(authenticator)
+    def currency():
+        if request.method == "POST":
+            code = request.form.get("currency", "").strip().upper()
+            if code and code not in babel.numbers.list_currencies():
+                flasher.flash_message(
+                    _("'%(code)s' is not a known ISO 4217 currency code.", code=code),
+                    FlashTypes.WARNING,
+                )
+            else:
+                config_accessor.ui().currency = code
+                config_accessor.save()
+                flasher.flash_message(_("Currency updated."), FlashTypes.SUCCESS)
+            return redirect(url_for(".currency"))
+
+        return render_template(
+            "settings/currency.html.j2",
+            current_currency=config_accessor.ui().currency,
+            example=format_money(
+                decimal.Decimal("1234.5"), config_accessor.ui().currency
+            ),
         )
 
     @blueprint.route("/cluster-bookmarks/new", methods=["GET", "POST"])
@@ -647,6 +730,7 @@ def make_settings_blueprint(
             "birth_year": config_accessor.heart_rate().birth_year,
             "heart_rate_resting": config_accessor.heart_rate().heart_rate_resting,
             "heart_rate_maximum": config_accessor.heart_rate().heart_rate_maximum,
+            "zone_boundaries": None,
         }
 
         heart_rate_computer = HeartRateZoneComputer(config_accessor)

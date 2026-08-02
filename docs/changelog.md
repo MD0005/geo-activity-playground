@@ -17,18 +17,43 @@ Types of changes
 
 ## Unreleased
 
+
+## Version 1.43.0 — 2026-08-01
+
 Added:
 
-- Add a per-equipment detail page with its usage plots and an edit form for the name and usage offset, linked from the equipment overview. Creating equipment also moved here from the settings page.
-- Add pictures per equipment.
-- Add a maintenance cost flow chart to each equipment's detail page, showing the cost of that equipment's maintenance actions broken down by title.
-- Show a "Due maintenance tasks" box on the landing page listing overdue recurring tasks across all equipment.
-- Record activity files that fail to import (parse errors, no geospatial data, empty time series) in a new "Broken Activity Files" settings page instead of just logging a warning on every import scan. Files are only retried once their content changes, or after being retried manually from that page. ([GH-472](https://github.com/martin-ueding/geo-activity-playground/issues/472))
+- Add a currency setting under Settings → Display → Currency. Maintenance costs were previously shown as bare numbers with no indication of their unit. Setting an ISO 4217 code formats all amounts in your locale's convention and labels the cost axes and tooltips in the maintenance and equipment plots. There is a single currency for all entries and no conversion; leaving the setting empty keeps the previous bare numbers.
+
+Changed:
+
+- Update the German and Dutch translations, adding the 172 and 174 strings that were still untranslated after the recent maintenance tracker, excluded activities, Hammerhead and technical maintenance features.
+
+Fixed:
+
+- Treat an interval of zero on a recurring maintenance task as “no interval” instead of “due immediately”. Tasks that only have a kilometer interval no longer stay overdue right after being marked as done.
+- Draw maintenance actions without a cost with a symbolic minimum thickness in the maintenance cost flow chart. They were previously invisible, and an equipment whose actions were all free produced an empty chart. Tooltips still show the actual cost.
+
+## Version 1.42.0 — 2026-08-01
+
+Added:
+
+- New equipment maintenance tracker:
+  - Add a per-equipment detail page with its usage plots and an edit form for the name and usage offset, linked from the equipment overview. Creating equipment also moved here from the settings page.
+  - Add pictures per equipment.
+  - Add a maintenance cost flow chart to each equipment's detail page, showing the cost of that equipment's maintenance actions broken down by title.
+  - Show a "Due maintenance tasks" box on the landing page listing overdue recurring tasks across all equipment.
+- Add the ability to mark missing explorer tiles as inaccessible; marked tiles are shown with diagonal gray stripes on every explorer overlay.
+- Record activities that fail to import (parse errors, no geospatial data, empty time series) in a new "Excluded Activities" settings page instead of just logging a warning on every import scan. Files are only retried once their content changes, or after being retried manually from that page. ([GH-472](https://github.com/martin-ueding/geo-activity-playground/issues/472))
+- Add a `source` column to `Activity` that records which importer created the record.
+- Consolidate all tests in the `tests/` directory with shared fixtures, add a smoke test that fetches every `GET` route against a database seeded from real activity files, render templates with `jinja2.StrictUndefined` in tests, and check the Alembic migrations against the models. The test suite runs as a pre-push hook; see the new [Run the Tests](run-the-tests.md) documentation.
 
 Changed:
 
 - Move all application settings from the `config.json` file into the database, split across domain-grouped tables (heart rate, Strava, activity import, UI, and map). Settings are seeded once from an existing `config.json` on the next start, after which the database is authoritative and the file can be deleted. Privacy zones now live in their own database table instead of the config file.
+- Unify the Strava API and checkout importers into a single `features/strava/` package, a single settings page, and a compound `StravaActivitySource` that runs the checkout import before the API import.
 - Replace the equipment overview table with Bootstrap cards showing each equipment's usage, first use and last use, linking to its new detail page.
+- Record Hammerhead activities without geographic data as excluded instead of silently skipping them, so their FIT files are no longer downloaded again on every scan.
+- Require a POST request to delete an activity, so the delete action cannot be triggered by following a link.
 
 Removed:
 
@@ -36,9 +61,12 @@ Removed:
 
 Fixed:
 
+- Deleting an activity now sticks: it is recorded as excluded from import, so the next scan does not add it back. This works for every source, keyed by the file content hash for directory imports and by the remote activity ID for Strava and Hammerhead. Source data is never deleted, so the file in `Activities/` stays where it is and the activity can be brought back from Settings → Excluded Activities. ([GH-474](https://github.com/martin-ueding/geo-activity-playground/issues/474))
+- Fix deleting an activity leaving its time series file behind in `Time Series/`. The wrong file name was used, so the parquet file was never removed.
+- Fix the Strava API importer's duplicate check, which compared a number against the text `upstream_id` column and therefore never matched. The Strava checkout importer now stores `upstream_id` as text as well, matching every other importer.
 - Fix a crash when recomputing segments after changing the time-gap threshold. The reprocessing now uses the raw time series (matching the re-enrich and repair actions) instead of the trimmed series, which caused an out-of-bounds index for trimmed activities.
-- Fix the maintenance "Cost vs. usage" plot to show one point per equipment (total cost against total distance) instead of one point per maintenance action against the odometer reading at the time, which made it hard to interpret.
 - Use a root-relative tile URL in the explorer's `style.json` instead of one built from `request.url_root`, which produced `http://` URLs behind an SSL-terminating reverse proxy and made browsers block the tiles as mixed content. ([GH-470](https://github.com/martin-ueding/geo-activity-playground/issues/470))
+- Fix downloading the heatmap as a PNG image, which failed with an error because the image was allocated without an alpha channel.
 
 Removed:
 

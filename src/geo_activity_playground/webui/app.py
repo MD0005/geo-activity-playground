@@ -1,5 +1,6 @@
 import atexit
 import datetime
+import decimal
 import html
 import importlib
 import importlib.metadata
@@ -30,6 +31,7 @@ from markupsafe import Markup
 
 from ..core.activities import ActivityRepository
 from ..core.config import ConfigAccessor, import_config_json
+from ..core.currency import format_money
 from ..core.datamodel import (
     DB,
     DEFAULT_UNKNOWN_NAME,
@@ -58,6 +60,8 @@ from ..features.calendar.blueprint import make_calendar_blueprint
 from ..features.data_export.blueprint import make_export_blueprint
 from ..features.eddington.blueprint import register_eddington_blueprint
 from ..features.equipment.blueprint import make_equipment_blueprint
+from ..features.explorer.blueprint import make_explorer_blueprint
+from ..features.explorer.model import ExplorerTileBookmark  # noqa: F401
 from ..features.explorer_video.video_blueprint import make_explorer_video_blueprint
 from ..features.hall_of_fame.blueprint import make_hall_of_fame_blueprint
 from ..features.hammerhead.model import get_hammerhead_auth
@@ -82,7 +86,6 @@ from ..features.tile.blueprint import make_tile_blueprint
 from ..features.upload.blueprint import make_upload_blueprint
 from .authenticator import Authenticator
 from .blueprints.entry_views import register_entry_views
-from .blueprints.explorer_blueprint import make_explorer_blueprint
 from .blueprints.search_blueprint import make_search_blueprint
 from .blueprints.settings_blueprint import make_settings_blueprint
 from .flasher import FlaskFlasher
@@ -314,6 +317,10 @@ def create_app(
         else:
             return value.strftime("%Y-%m-%d %H:%M")
 
+    @app.template_filter()
+    def money(value: decimal.Decimal | float | None):
+        return format_money(value, config_accessor.ui().currency)
+
     @app.template_global("unique_id")
     def unique_id():
         return f"id-{uuid.uuid4()}"
@@ -392,7 +399,7 @@ def create_app(
         ),
         (
             "/maintenance",
-            make_maintenance_blueprint(authenticator, flasher),
+            make_maintenance_blueprint(authenticator, flasher, config_accessor),
         ),
         ("/photo", make_photo_blueprint(config_accessor, authenticator, flasher)),
         ("/picture", make_pictures_blueprint()),
@@ -443,6 +450,7 @@ def create_app(
             "version": _try_get_version(),
             "num_activities": len(repository),
             "map_tile_attribution": config_accessor.map().map_tile_attribution,
+            "currency": config_accessor.ui().currency,
             "request_url": urllib.parse.quote_plus(request.url),
             "explorer_zoom_levels": sorted(config_accessor.ui().explorer_zoom_levels)
             or [14],

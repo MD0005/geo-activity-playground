@@ -7,14 +7,12 @@ from types import SimpleNamespace
 import pandas as pd
 import sqlalchemy
 
+import geo_activity_playground.features.strava.api_importer as strava_api
 from geo_activity_playground.core.config import ConfigAccessor
 from geo_activity_playground.core.datamodel import (
     DB,
     Activity,
-    ClusterHistoryCheckpoint,
-    ClusterHistoryEvent,
     Equipment,
-    ExplorerTileBookmark,
     Kind,
     StoredSearchQuery,
     Tag,
@@ -22,6 +20,11 @@ from geo_activity_playground.core.datamodel import (
     activity_tag_association_table,
 )
 from geo_activity_playground.features.activity_photos.model import Photo
+from geo_activity_playground.features.explorer.model import (
+    ClusterHistoryCheckpoint,
+    ClusterHistoryEvent,
+    ExplorerTileBookmark,
+)
 from geo_activity_playground.features.heatmap.model import HeatmapTileCache
 from geo_activity_playground.features.plot_builder.model import PlotSpec
 from geo_activity_playground.features.segments.model import (
@@ -30,7 +33,6 @@ from geo_activity_playground.features.segments.model import (
     SegmentMatch,
 )
 from geo_activity_playground.features.square_planner.model import SquarePlannerBookmark
-from geo_activity_playground.features.strava_api import importer as strava_api
 
 
 def test_wipe_local_state_truncates_user_tables_and_files(client, app, tmp_path):
@@ -139,7 +141,7 @@ def test_wipe_local_state_truncates_user_tables_and_files(client, app, tmp_path)
         encoding="utf-8",
     )
     (tmp_path / "Time Series" / "stale.parquet").write_text("stale", encoding="utf-8")
-    (tmp_path / "Photos").mkdir()
+    (tmp_path / "Photos").mkdir(exist_ok=True)
     (tmp_path / "Photos" / "stale.jpg").write_text("stale", encoding="utf-8")
     (tmp_path / "Strava API").mkdir()
     (tmp_path / "Strava API" / "strava_tokens.json").write_text(

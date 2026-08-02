@@ -13,7 +13,7 @@ from .features.explorer_video.cli import (
     register_main_explorer_video,
 )
 from .features.heatmap_video.cli import register_main_heatmap_video
-from .features.strava_checkout.importer import convert_strava_checkout
+from .features.strava.checkout_importer import convert_strava_checkout
 from .webui.app import create_app, web_ui_main
 
 logger = logging.getLogger(__name__)
@@ -23,14 +23,15 @@ def main_export_kml(options: argparse.Namespace) -> None:
     import os
 
     from .core.coordinates import Bounds
-    from .core.tiles import compute_tile
-    from .explorer.grid_file import (
+    from .core.grid import (
         get_border_tiles,
         make_grid_file_kml,
         make_grid_file_kml_squadrats,
         make_grid_points,
     )
-    from .explorer.tile_visits import get_explorer_square, get_tile_history_df
+    from .core.tile_visits import get_tile_history_df
+    from .core.tiles import compute_tile
+    from .features.explorer.clustering import get_explorer_square
 
     os.chdir(options.basedir)
     database_path = pathlib.Path("database.sqlite")

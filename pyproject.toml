@@ -1,6 +1,6 @@
 [project]
 name = "geo-activity-playground"
-version = "1.41.0"
+version = "1.43.0"
 description = "Analysis of geo data activities like rides, runs or hikes."
 authors = [{ name = "Martin Ueding", email = "mu@martin-ueding.de" }]
 license = { text = "MIT" }
@@ -79,6 +79,10 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/geo_activity_playground"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q --import-mode=importlib"
 
 [tool.mypy]
 disable_error_code = "import-untyped"

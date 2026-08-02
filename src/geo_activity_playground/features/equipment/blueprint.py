@@ -8,6 +8,7 @@ from flask_babel import gettext as _
 
 from ...core.activities import ActivityRepository
 from ...core.config import ConfigAccessor
+from ...core.currency import money_title
 from ...core.datamodel import DB, Equipment
 from ...core.internal_pictures import delete_internal_picture, save_internal_picture
 from ...webui.authenticator import Authenticator, needs_authentication
@@ -31,20 +32,29 @@ def _stack_nodes(
     return positions
 
 
-def _maintenance_flow_plot(links: pd.DataFrame) -> str | None:
+_MINIMUM_FLOW_WEIGHT = 1.0
+
+
+def _maintenance_flow_plot(links: pd.DataFrame, currency: str) -> str | None:
     if links.empty:
         return None
 
-    equipment_totals = links.groupby("equipment")["cost"].sum()
-    title_totals = links.groupby("title")["cost"].sum()
-    equipment_order = list(equipment_totals.sort_values(ascending=False).index)
-    title_order = list(title_totals.sort_values(ascending=False).index)
+    cost_title = money_title(_("Cost"), currency)
+    links = links.copy()
+    links["weight"] = links["cost"].clip(lower=_MINIMUM_FLOW_WEIGHT)
 
-    gap = links["cost"].sum() * 0.02
+    equipment_costs = links.groupby("equipment")["cost"].sum()
+    title_costs = links.groupby("title")["cost"].sum()
+    equipment_totals = links.groupby("equipment")["weight"].sum()
+    title_totals = links.groupby("title")["weight"].sum()
+    equipment_order = list(equipment_costs.sort_values(ascending=False).index)
+    title_order = list(title_costs.sort_values(ascending=False).index)
+
+    gap = links["weight"].sum() * 0.02
     equipment_pos = _stack_nodes(equipment_order, equipment_totals, gap)
     title_pos = _stack_nodes(title_order, title_totals, gap)
 
-    links_sorted = links.copy()
+    links_sorted = links
     links_sorted["equipment"] = pd.Categorical(
         links_sorted["equipment"], categories=equipment_order, ordered=True
     )
@@ -61,18 +71,19 @@ def _maintenance_flow_plot(links: pd.DataFrame) -> str | None:
     smoothstep = 3 * t**2 - 2 * t**3
 
     curve_rows = []
-    for link_id, (equipment, title, cost) in enumerate(
+    for link_id, (equipment, title, cost, weight) in enumerate(
         zip(
             links_sorted["equipment"].astype(str),
             links_sorted["title"].astype(str),
             links_sorted["cost"],
+            links_sorted["weight"],
         )
     ):
         y0_left = left_cursor[equipment]
-        y1_left = y0_left + cost
+        y1_left = y0_left + weight
         left_cursor[equipment] = y1_left
         y0_right = right_cursor[title]
-        y1_right = y0_right + cost
+        y1_right = y0_right + weight
         right_cursor[title] = y1_right
 
         top = y0_left + (y0_right - y0_left) * smoothstep
@@ -102,7 +113,7 @@ def _maintenance_flow_plot(links: pd.DataFrame) -> str | None:
                 "y0": y0,
                 "y1": y1,
                 "label": name,
-                "total": equipment_totals[name],
+                "total": equipment_costs[name],
                 "side": "equipment",
             }
         )
@@ -115,7 +126,7 @@ def _maintenance_flow_plot(links: pd.DataFrame) -> str | None:
                 "y0": y0,
                 "y1": y1,
                 "label": name,
-                "total": title_totals[name],
+                "total": title_costs[name],
                 "side": "title",
             }
         )
@@ -138,7 +149,7 @@ def _maintenance_flow_plot(links: pd.DataFrame) -> str | None:
             tooltip=[
                 alt.Tooltip("equipment:N", title=_("Equipment")),
                 alt.Tooltip("title:N", title=_("Title")),
-                alt.Tooltip("cost:Q", title=_("Cost"), format=".2f"),
+                alt.Tooltip("cost:Q", title=cost_title, format=".2f"),
             ],
         )
     )
@@ -153,7 +164,7 @@ def _maintenance_flow_plot(links: pd.DataFrame) -> str | None:
             color=alt.Color("label:N", legend=None),
             tooltip=[
                 alt.Tooltip("label:N", title=_("Equipment")),
-                alt.Tooltip("total:Q", title=_("Cost"), format=".2f"),
+                alt.Tooltip("total:Q", title=cost_title, format=".2f"),
             ],
         )
     )
@@ -167,7 +178,7 @@ def _maintenance_flow_plot(links: pd.DataFrame) -> str | None:
             y2="y1:Q",
             tooltip=[
                 alt.Tooltip("label:N", title=_("Title")),
-                alt.Tooltip("total:Q", title=_("Cost"), format=".2f"),
+                alt.Tooltip("total:Q", title=cost_title, format=".2f"),
             ],
         )
     )
@@ -387,7 +398,10 @@ def make_equipment_blueprint(
         actions = get_maintenance_actions_table()
         equipment_actions = actions.loc[actions["equipment"] == equipment.name]
         flow_plot = (
-            _maintenance_flow_plot(get_maintenance_flow_by_title(equipment_actions))
+            _maintenance_flow_plot(
+                get_maintenance_flow_by_title(equipment_actions),
+                config_accessor.ui().currency,
+            )
             if len(equipment_actions)
             else None
         )

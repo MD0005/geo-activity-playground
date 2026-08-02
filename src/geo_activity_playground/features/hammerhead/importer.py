@@ -11,6 +11,7 @@ from tqdm import tqdm
 from ...core.activities import ActivityRepository
 from ...core.datamodel import DB, Activity, ActivityImportConfig, get_or_make_kind
 from ...core.enrichment import update_and_commit
+from ...core.import_exclusion import is_excluded, record_exclusion
 from ...importers.activity_parsers import ActivityParseError, read_fit_activity
 from .model import HammerheadAuth, get_hammerhead_auth
 
@@ -100,10 +101,11 @@ def import_from_hammerhead_api(
     repository: ActivityRepository,
     hammerhead_begin: str | None = None,
     hammerhead_end: str | None = None,
+    source: str | None = None,
 ) -> None:
     try:
         while _try_import_hammerhead(
-            config, repository, hammerhead_begin, hammerhead_end
+            config, repository, hammerhead_begin, hammerhead_end, source
         ):
             logger.warning("Hammerhead rate limit hit; sleeping for 60 seconds.")
             time.sleep(60)
@@ -120,6 +122,7 @@ def _try_import_hammerhead(
     repository: ActivityRepository,
     hammerhead_begin: str | None,
     hammerhead_end: str | None,
+    source: str | None = None,
 ) -> bool:
     access_token = get_current_access_token()
     auth = get_hammerhead_auth()
@@ -168,7 +171,7 @@ def _try_import_hammerhead(
                 continue
 
             try:
-                _import_one_activity(config, session, summary)
+                _import_one_activity(config, session, summary, source)
             except HammerheadAuthError:
                 raise
             except requests.HTTPError as e:
@@ -206,6 +209,8 @@ def _try_import_hammerhead(
 
 
 def _already_imported(hammerhead_id: str) -> bool:
+    if is_excluded("hammerhead", str(hammerhead_id)):
+        return True
     existing = DB.session.scalar(
         sqlalchemy.select(Activity).where(Activity.upstream_id == str(hammerhead_id))
     )
@@ -219,7 +224,10 @@ def _max_date(current: str | None, candidate: str) -> str:
 
 
 def _import_one_activity(
-    config: ActivityImportConfig, session: requests.Session, summary: dict
+    config: ActivityImportConfig,
+    session: requests.Session,
+    summary: dict,
+    source: str | None = None,
 ) -> None:
     activity_id = summary["id"]
     logger.info(
@@ -241,6 +249,7 @@ def _import_one_activity(
         logger.warning(
             f"Hammerhead activity {activity_id} has no geographic data, skipping."
         )
+        record_exclusion("hammerhead", str(activity_id), "no_geo_data")
         return
 
     activity.upstream_id = str(activity_id)
@@ -253,6 +262,7 @@ def _import_one_activity(
         activity.distance_km = float(summary["distance"]) / 1000
     if summary.get("duration") is not None:
         activity.elapsed_time = datetime.timedelta(seconds=float(summary["duration"]))
+    activity.source = source
 
     update_and_commit(activity, time_series, config)
     logger.info(f"Added activity '{activity.name}' from Hammerhead.")
