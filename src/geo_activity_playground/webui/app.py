@@ -28,6 +28,7 @@ from flask import Flask, request
 from flask_alembic import Alembic
 from flask_babel import Babel
 from markupsafe import Markup
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 from ..core.activities import ActivityRepository
 from ..core.config import ConfigAccessor, import_config_json
@@ -224,6 +225,10 @@ def create_app(
         Configured Flask application.
     """
     app = Flask(__name__)
+
+    # Honor X-Forwarded-* headers set by a reverse proxy so that generated
+    # redirects use the original scheme (e.g. HTTPS) and host.
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
 
     app.config["SQLALCHEMY_DATABASE_URI"] = database_uri
     if database_uri.startswith("sqlite:///") and database_uri != "sqlite:///:memory:":
@@ -454,6 +459,8 @@ def create_app(
             "request_url": urllib.parse.quote_plus(request.url),
             "explorer_zoom_levels": sorted(config_accessor.ui().explorer_zoom_levels)
             or [14],
+            "hillshade_opacity": config_accessor.tile().hillshade_opacity,
+            "hillshade_blend_mode": config_accessor.tile().hillshade_blend_mode,
         }
         variables["equipments_avail"] = DB.session.scalars(
             sqlalchemy.select(Equipment).order_by(Equipment.name)
