@@ -3,8 +3,9 @@ import datetime
 import functools
 import hashlib
 import itertools
+from collections.abc import Set as AbstractSet
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, NamedTuple
 
 import matplotlib
 import numpy as np
@@ -13,9 +14,14 @@ import pandas as pd
 from ...core.coordinates import Bounds
 from ...core.datamodel import UiConfig
 from ...core.raster_map import OSM_TILE_SIZE
-from ...core.tile_visits import get_latest_new_tiles_activity_id
+from ...core.tile_visits import (
+    get_first_visits_for_activity,
+    get_latest_new_tiles_activity_id,
+)
 from .clustering import (
+    get_cluster_history_latest_event_index,
     get_cluster_membership_in_bounds,
+    get_cluster_tile_diff_for_activity,
     get_max_cluster,
 )
 
@@ -76,15 +82,29 @@ class HatchedPattern(TilePattern):
         return rgba
 
 
-def alpha_composite(base: np.ndarray, overlay: np.ndarray) -> np.ndarray:
-    """Composite a RGBA overlay onto a RGBA base image."""
-    a = overlay[..., 3]
-    out = np.copy(base)
-    out[..., :3] = (1 - a[..., np.newaxis]) * base[..., :3] + a[
-        ..., np.newaxis
-    ] * overlay[..., :3]
-    out[..., 3] = base[..., 3] + (1 - base[..., 3]) * a
-    return out
+class InsetRingsPattern(TilePattern):
+    """Nested borders drawn inside the tile, outermost color first.
+
+    Staying within the tile means that borders of adjacent tiles never overlap,
+    and a tile that belongs to several categories shows one ring per category.
+    """
+
+    def __init__(self, ring_colors: list[np.ndarray]) -> None:
+        self._ring_colors = ring_colors
+
+    def rasterize(self, shape: tuple[int, int]) -> np.ndarray:
+        height, width = shape
+        rgba = np.zeros((height, width, 4), dtype=np.float32)
+        thickness = max(1, min(width // 24, 6))
+        inset = 0
+        for color in self._ring_colors:
+            if 2 * inset >= min(height, width):
+                break
+            rgba[inset : height - inset, inset : width - inset] = color
+            inset += thickness
+        if 2 * inset < min(height, width):
+            rgba[inset : height - inset, inset : width - inset] = 0.0
+        return rgba
 
 
 HATCHED_PATTERN = HatchedPattern(
@@ -294,19 +314,30 @@ class VisitedColorStrategy(ColorStrategy):
             return None
 
 
-class LatestNewTilesColorStrategy(ColorStrategy):
-    def __init__(self, tile_visits, config: UiConfig, latest_activity_id: int | None):
-        self.tile_visits = tile_visits
+class ActivityHighlightColorStrategy(ColorStrategy):
+    """Highlight what one activity changed: new tiles and cluster growth."""
+
+    def __init__(
+        self,
+        new_tiles: AbstractSet[tuple[int, int]],
+        cluster_gained: AbstractSet[tuple[int, int]],
+        config: UiConfig,
+    ):
+        self._new_tiles = new_tiles
+        self._cluster_gained = cluster_gained
         self._config = config
-        self._latest_activity_id = latest_activity_id
 
     def color(self, tile_xy: tuple[int, int]) -> TilePattern | None:
-        info = self.tile_visits.get(tile_xy)
-        if info is not None and info["first_id"] == self._latest_activity_id:
-            return SolidColor(
-                hex_color_to_float(self._config.color_strategy_visited_color)
+        ring_colors = []
+        if tile_xy in self._new_tiles:
+            ring_colors.append(
+                hex_color_to_float(self._config.color_strategy_new_tile_color)
             )
-        return None
+        if tile_xy in self._cluster_gained:
+            ring_colors.append(
+                hex_color_to_float(self._config.color_strategy_new_cluster_color)
+            )
+        return InsetRingsPattern(ring_colors) if ring_colors else None
 
 
 class SquarePlannerColorStrategy(ColorStrategy):
@@ -340,6 +371,24 @@ class SquarePlannerColorStrategy(ColorStrategy):
             )
         else:
             return None
+
+
+@functools.lru_cache(maxsize=32)
+def _activity_highlight_tiles(
+    zoom: int, activity_id: int, history_version: int
+) -> tuple[frozenset[tuple[int, int]], frozenset[tuple[int, int]]]:
+    """New and newly clustered tiles of one activity.
+
+    Replaying the cluster history is far too expensive to repeat for every tile
+    image of a viewport, hence the cache. The history version is part of the key
+    so that added activities invalidate stale entries.
+    """
+    new_tiles = frozenset(
+        (tile_visit.tile_x, tile_visit.tile_y)
+        for tile_visit in get_first_visits_for_activity(activity_id, zoom)
+    )
+    cluster_gained, _ = get_cluster_tile_diff_for_activity(zoom, activity_id)
+    return new_tiles, frozenset(cluster_gained)
 
 
 def _tile_bounds(zoom: int, z: int, x: int, y: int) -> Bounds:
@@ -399,9 +448,15 @@ def _resolve_color_strategy(
         case "visited":
             return VisitedColorStrategy(tile_visits, config)
         case "latest_new":
-            return LatestNewTilesColorStrategy(
-                tile_visits, config, get_latest_new_tiles_activity_id(zoom)
+            activity_id = request.args.get(
+                "activity_id", type=int
+            ) or get_latest_new_tiles_activity_id(zoom)
+            if activity_id is None:
+                return ActivityHighlightColorStrategy(set(), set(), config)
+            new_tiles, cluster_gained = _activity_highlight_tiles(
+                zoom, activity_id, get_cluster_history_latest_event_index(zoom)
             )
+            return ActivityHighlightColorStrategy(new_tiles, cluster_gained, config)
         case "square_planner":
             return SquarePlannerColorStrategy(
                 tile_visits,
@@ -470,27 +525,26 @@ def _draw_explorer_square_edges(
         ] = SQUARE_COLOR
 
 
-def _render_tile_image(
-    zoom: int,
-    z: int,
-    x: int,
-    y: int,
-    color_strategy: ColorStrategy,
-    evolution_state: SimpleNamespace,
-    inaccessible_tiles: frozenset[tuple[int, int]] | None = None,
-) -> np.ndarray:
-    if inaccessible_tiles is None:
-        inaccessible_tiles = frozenset()
-    result = np.zeros((OSM_TILE_SIZE, OSM_TILE_SIZE, 4), dtype=np.float32)
+class _SubTile(NamedTuple):
+    tile_x: int
+    tile_y: int
+    x_start: int
+    y_start: int
+    width: int
+    draw_left: bool
+    draw_top: bool
+    draw_right: bool
+    draw_bottom: bool
 
+
+def _sub_tiles(zoom: int, z: int, x: int, y: int) -> list[_SubTile]:
+    """Explorer tiles covered by one map tile, with their pixel extents."""
     if z >= zoom:
         factor = 2 ** (z - zoom)
-        tile_x = x // factor
-        tile_y = y // factor
-        subtiles = [
-            (
-                tile_x,
-                tile_y,
+        return [
+            _SubTile(
+                x // factor,
+                y // factor,
                 0,
                 0,
                 OSM_TILE_SIZE,
@@ -500,24 +554,47 @@ def _render_tile_image(
                 (y + 1) % factor == 0,
             )
         ]
-    else:
-        factor = 2 ** (zoom - z)
-        width = OSM_TILE_SIZE // factor
-        subtiles = [
-            (
-                x * factor + xo,
-                y * factor + yo,
-                xo * width,
-                yo * width,
-                width,
-                True,
-                True,
-                True,
-                True,
-            )
-            for xo in range(factor)
-            for yo in range(factor)
-        ]
+    factor = 2 ** (zoom - z)
+    width = OSM_TILE_SIZE // factor
+    return [
+        _SubTile(
+            x * factor + xo,
+            y * factor + yo,
+            xo * width,
+            yo * width,
+            width,
+            True,
+            True,
+            True,
+            True,
+        )
+        for xo in range(factor)
+        for yo in range(factor)
+    ]
+
+
+def render_inaccessible_tile_image(
+    zoom: int, z: int, x: int, y: int, inaccessible_tiles: frozenset[tuple[int, int]]
+) -> np.ndarray:
+    result = np.zeros((OSM_TILE_SIZE, OSM_TILE_SIZE, 4), dtype=np.float32)
+    for sub_tile in _sub_tiles(zoom, z, x, y):
+        if (sub_tile.tile_x, sub_tile.tile_y) in inaccessible_tiles:
+            result[
+                sub_tile.y_start : sub_tile.y_start + sub_tile.width,
+                sub_tile.x_start : sub_tile.x_start + sub_tile.width,
+            ] = HATCHED_PATTERN.rasterize((sub_tile.width, sub_tile.width))
+    return result
+
+
+def _render_tile_image(
+    zoom: int,
+    z: int,
+    x: int,
+    y: int,
+    color_strategy: ColorStrategy,
+    evolution_state: SimpleNamespace,
+) -> np.ndarray:
+    result = np.zeros((OSM_TILE_SIZE, OSM_TILE_SIZE, 4), dtype=np.float32)
 
     for (
         tile_x,
@@ -529,7 +606,7 @@ def _render_tile_image(
         draw_top,
         draw_right,
         draw_bottom,
-    ) in subtiles:
+    ) in _sub_tiles(zoom, z, x, y):
         tile_xy = (tile_x, tile_y)
         pattern = color_strategy.color(tile_xy)
         if pattern is not None:
@@ -537,16 +614,6 @@ def _render_tile_image(
                 y_start : y_start + width,
                 x_start : x_start + width,
             ] = pattern.rasterize((width, width))
-
-        if tile_xy in inaccessible_tiles:
-            hatch = HATCHED_PATTERN.rasterize((width, width))
-            result[
-                y_start : y_start + width,
-                x_start : x_start + width,
-            ] = alpha_composite(
-                result[y_start : y_start + width, x_start : x_start + width],
-                hatch,
-            )
 
         _draw_grid_lines(result, x_start, y_start, width, draw_left, draw_top)
         _draw_explorer_square_edges(

@@ -689,6 +689,12 @@ class UiConfig(DB.Model):
     color_strategy_visited_color: Mapped[str] = mapped_column(
         sa.String, nullable=False, default="#0000004d"
     )
+    color_strategy_new_tile_color: Mapped[str] = mapped_column(
+        sa.String, nullable=False, default="#ff7700ff", server_default="#ff7700ff"
+    )
+    color_strategy_new_cluster_color: Mapped[str] = mapped_column(
+        sa.String, nullable=False, default="#0066ffff", server_default="#0066ffff"
+    )
     color_strategy_cmap_opacity: Mapped[float] = mapped_column(
         sa.Float, nullable=False, default=0.5
     )
@@ -771,3 +777,14 @@ class PrivacyZone(DB.Model):
             )
         ]
         return time_series.loc[mask]
+
+
+class DatabaseMaintenanceState(DB.Model):
+    """Single row recording when the database was last vacuumed and analyzed."""
+
+    __tablename__ = "database_maintenance_state"
+
+    id: Mapped[int] = mapped_column(primary_key=True, default=1)
+    last_run: Mapped[datetime.datetime | None] = mapped_column(
+        sa.DateTime, nullable=True
+    )

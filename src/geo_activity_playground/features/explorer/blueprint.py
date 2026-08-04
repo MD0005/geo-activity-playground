@@ -63,11 +63,13 @@ from .clustering import (
     get_square_history_df,
 )
 from .garmin_img import build_garmin_img, mkgmap_available
+from .inaccessible import get_inaccessible_tiles
 from .model import ExplorerTileBookmark, InaccessibleTile
 from .tile_rendering import (
     _render_tile_image,
     _resolve_color_strategy,
     _tile_bounds,
+    render_inaccessible_tile_image,
 )
 
 alt.data_transformers.enable("vegafusion")
@@ -108,6 +110,92 @@ def _grid_points_response(
         abort(404)
 
 
+def _png_response(image: np.ndarray) -> ResponseReturnValue:
+    f = io.BytesIO()
+    pl.imsave(f, image, format="png")
+    return Response(
+        bytes(f.getbuffer()),
+        mimetype="image/png",
+        headers={"Cache-Control": "no-cache"},
+    )
+
+
+def _explorer_layer(zoom: int, color_strategy: str) -> tuple[str, dict, dict]:
+    source_id = f"gap-explorer-{zoom}-{color_strategy}"
+    source = {
+        "type": "raster",
+        "tiles": [
+            f"/explorer/{zoom}/tile/{{z}}/{{x}}/{{y}}.png"
+            f"?color_strategy={color_strategy}"
+        ],
+        "tileSize": 256,
+    }
+    layer = {
+        "id": f"gap-explorer-layer-{zoom}-{color_strategy}",
+        "type": "raster",
+        "source": source_id,
+        "paint": {"raster-opacity": 0.8},
+    }
+    return source_id, source, layer
+
+
+def _inaccessible_layer(zoom: int) -> tuple[str, dict, dict]:
+    source_id = f"gap-inaccessible-{zoom}"
+    source = {
+        "type": "raster",
+        "tiles": [f"/explorer/{zoom}/inaccessible-tile/{{z}}/{{x}}/{{y}}.png"],
+        "tileSize": 256,
+    }
+    layer = {
+        "id": f"gap-inaccessible-layer-{zoom}",
+        "type": "raster",
+        "source": source_id,
+        "paint": {"raster-opacity": 0.8},
+    }
+    return source_id, source, layer
+
+
+def _parse_layer_specs(raw_layers: str) -> list[tuple[int, str]]:
+    specs = []
+    for token in raw_layers.split(","):
+        token = token.strip()
+        if not token:
+            continue
+        zoom_str, _, kind = token.partition(":")
+        specs.append((int(zoom_str), kind or "colorful_cluster"))
+    return specs
+
+
+def _build_style(
+    config_accessor: ConfigAccessor,
+    sources: dict[str, Any],
+    layers: list[dict[str, Any]],
+) -> dict[str, Any]:
+    map_style_url = config_accessor.map().map_style_url
+    if map_style_url:
+        style = requests.get(map_style_url, timeout=10).json()
+        style["sources"].update(sources)
+        style["layers"].extend(layers)
+    else:
+        raster_tile_url = config_accessor.map().map_tile_url.replace("{zoom}", "{z}")
+        style = {
+            "version": 8,
+            "sources": {
+                "base-map": {
+                    "type": "raster",
+                    "tiles": [raster_tile_url],
+                    "tileSize": 256,
+                },
+                **sources,
+            },
+            "layers": [
+                {"id": "base-map-layer", "type": "raster", "source": "base-map"},
+                *layers,
+            ],
+        }
+    return style
+
+
 def make_explorer_blueprint(
     authenticator: Authenticator,
     config_accessor: ConfigAccessor,
@@ -141,7 +229,14 @@ def make_explorer_blueprint(
         tile_bounds = Bounds(x1, y1, x2 + 2, y2 + 2)
 
         tiles = get_tile_history_df(zoom)
-        points = get_border_tiles(tiles, zoom, tile_bounds)
+        excluded_tiles = get_inaccessible_tiles(
+            zoom,
+            tile_bounds.x_min,
+            tile_bounds.x_max,
+            tile_bounds.y_min,
+            tile_bounds.y_max,
+        )
+        points = get_border_tiles(tiles, zoom, tile_bounds, excluded_tiles)
         return _grid_points_response(points, suffix, "missing")
 
     @blueprint.route(
@@ -159,6 +254,19 @@ def make_explorer_blueprint(
             (tile for tile in tiles.keys() if tile_bounds.contains(*tile)), zoom
         )
         return _grid_points_response(points, suffix, "explored")
+
+    @blueprint.route(
+        "/<int:zoom>/<float(signed=True):north>/<float(signed=True):east>/<float(signed=True):south>/<float(signed=True):west>/inaccessible.<suffix>"
+    )
+    def download_inaccessible(
+        zoom: int, north: float, east: float, south: float, west: float, suffix: str
+    ) -> ResponseReturnValue:
+        x1, y1 = compute_tile(north, west, zoom)
+        x2, y2 = compute_tile(south, east, zoom)
+
+        inaccessible_tiles = get_inaccessible_tiles(zoom, x1, x2 + 2, y1, y2 + 2)
+        points = make_grid_points(inaccessible_tiles, zoom)
+        return _grid_points_response(points, suffix, "inaccessible")
 
     @blueprint.route("/squadrats.kml")
     def download_squadrats() -> ResponseReturnValue:
@@ -257,48 +365,39 @@ def make_explorer_blueprint(
     @blueprint.route("/<int:zoom>/style.json")
     def style_json(zoom: int) -> ResponseReturnValue:
         color_strategy = request.args.get("color_strategy", "colorful_cluster")
-        tile_url = (
-            f"/explorer/{zoom}/tile/{{z}}/{{x}}/{{y}}.png"
-            f"?color_strategy={color_strategy}"
+        source_id, source, layer = _explorer_layer(zoom, color_strategy)
+        inaccessible_source_id, inaccessible_source, inaccessible_layer = (
+            _inaccessible_layer(zoom)
         )
-        gap_source_id = f"gap-explorer-{zoom}-{color_strategy}"
-        gap_source = {
-            "type": "raster",
-            "tiles": [tile_url],
-            "tileSize": 256,
-        }
-        gap_layer = {
-            "id": f"gap-explorer-layer-{zoom}-{color_strategy}",
-            "type": "raster",
-            "source": gap_source_id,
-            "paint": {"raster-opacity": 0.8},
-        }
+        style = _build_style(
+            config_accessor,
+            {source_id: source, inaccessible_source_id: inaccessible_source},
+            [layer, inaccessible_layer],
+        )
+        return Response(json.dumps(style), mimetype="application/json")
 
-        map_style_url = config_accessor.map().map_style_url
-        if map_style_url:
-            style = requests.get(map_style_url, timeout=10).json()
-            style["sources"][gap_source_id] = gap_source
-            style["layers"].append(gap_layer)
+    @blueprint.route("/style.json")
+    def combined_style_json() -> ResponseReturnValue:
+        raw_layers = request.args.get("layers")
+        if raw_layers:
+            layer_specs = _parse_layer_specs(raw_layers)
         else:
-            raster_tile_url = config_accessor.map().map_tile_url.replace(
-                "{zoom}", "{z}"
-            )
-            style = {
-                "version": 8,
-                "sources": {
-                    "base-map": {
-                        "type": "raster",
-                        "tiles": [raster_tile_url],
-                        "tileSize": 256,
-                    },
-                    gap_source_id: gap_source,
-                },
-                "layers": [
-                    {"id": "base-map-layer", "type": "raster", "source": "base-map"},
-                    gap_layer,
-                ],
-            }
+            zoom_levels = sorted(config_accessor.ui().explorer_zoom_levels)
+            layer_specs = [(zoom, "colorful_cluster") for zoom in zoom_levels] + [
+                (zoom, "inaccessible") for zoom in zoom_levels
+            ]
 
+        sources: dict[str, Any] = {}
+        layers: list[dict[str, Any]] = []
+        for zoom, kind in layer_specs:
+            if kind == "inaccessible":
+                source_id, source, layer = _inaccessible_layer(zoom)
+            else:
+                source_id, source, layer = _explorer_layer(zoom, kind)
+            sources[source_id] = source
+            layers.append(layer)
+
+        style = _build_style(config_accessor, sources, layers)
         return Response(json.dumps(style), mimetype="application/json")
 
     @blueprint.route("/<int:zoom>/tile/<int:z>/<int:x>/<int:y>.png")
@@ -325,18 +424,6 @@ def make_explorer_blueprint(
             tile_bounds.y_min,
             tile_bounds.y_max,
         )
-        inaccessible_tiles = {
-            (tile.tile_x, tile.tile_y)
-            for tile in DB.session.scalars(
-                sqlalchemy.select(InaccessibleTile).where(
-                    InaccessibleTile.zoom == zoom,
-                    InaccessibleTile.tile_x >= tile_bounds.x_min,
-                    InaccessibleTile.tile_x <= tile_bounds.x_max,
-                    InaccessibleTile.tile_y >= tile_bounds.y_min,
-                    InaccessibleTile.tile_y <= tile_bounds.y_max,
-                )
-            )
-        }
 
         color_strategy = _resolve_color_strategy(
             request,
@@ -350,22 +437,21 @@ def make_explorer_blueprint(
             config,
         )
 
-        result = _render_tile_image(
-            zoom,
-            z,
-            x,
-            y,
-            color_strategy,
-            evolution_state,
-            frozenset(inaccessible_tiles),
-        )
+        result = _render_tile_image(zoom, z, x, y, color_strategy, evolution_state)
+        return _png_response(result)
 
-        f = io.BytesIO()
-        pl.imsave(f, result, format="png")
-        return Response(
-            bytes(f.getbuffer()),
-            mimetype="image/png",
-            headers={"Cache-Control": "no-cache"},
+    @blueprint.route("/<int:zoom>/inaccessible-tile/<int:z>/<int:x>/<int:y>.png")
+    def inaccessible_tile(zoom: int, z: int, x: int, y: int) -> ResponseReturnValue:
+        tile_bounds = _tile_bounds(zoom, z, x, y)
+        inaccessible_tiles = get_inaccessible_tiles(
+            zoom,
+            tile_bounds.x_min,
+            tile_bounds.x_max,
+            tile_bounds.y_min,
+            tile_bounds.y_max,
+        )
+        return _png_response(
+            render_inaccessible_tile_image(zoom, z, x, y, inaccessible_tiles)
         )
 
     @blueprint.route(

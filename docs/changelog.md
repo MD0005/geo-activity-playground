@@ -18,6 +18,34 @@ Types of changes
 ## Unreleased
 
 
+## Version 1.46.0 — 2026-08-03
+
+Added:
+
+- A combined style JSON endpoint `/explorer/style.json` for MapLibre GL clients that lets several explorer layers (different zoom levels, color strategies, and inaccessible tiles) be combined into a single style document. Without parameters it includes the `colorful_cluster` and `inaccessible` layers for every configured explorer zoom level; a `layers` parameter of comma-separated `zoom:kind` entries selects exactly which layers to combine and in which order. ([GH-484](https://github.com/martin-ueding/geo-activity-playground/issues/484))
+- The Explorer Tiles page offers the inaccessible tiles in the visible area as a GeoJSON, GPX, or KML download, alongside the existing missing and explored tile downloads. ([GH-487](https://github.com/martin-ueding/geo-activity-playground/issues/487))
+
+Fixed:
+
+- The maps on an activity page show the “New Tiles & Cluster Growth” layer even when saved layer preferences from an earlier version selected something else. Layers introduced after the user last saved their preferences are switched on once and added to the saved selection, so that turning them off afterwards keeps them off. ([GH-486](https://github.com/martin-ueding/geo-activity-playground/issues/486))
+- The Equipment page no longer appears in the Settings sidebar. It is a usage overview with pictures and charts rather than a settings dialog, and it already has its own entry in the main navigation. ([GH-482](https://github.com/martin-ueding/geo-activity-playground/issues/482))
+
+## Version 1.45.0 — 2026-08-03
+
+Changed:
+
+- The explorer tile layer for new tiles now shows what an activity changed rather than only which tiles it discovered. Newly discovered tiles get an orange border, tiles that joined a cluster get a blue one, and tiles that did both get two nested borders. The borders are drawn inside the tile, so the outlines of neighboring tiles no longer overlap. The layer is called “New Tiles & Cluster Growth” and accepts an `activity_id` parameter to pick an activity other than the latest one. ([GH-366](https://github.com/martin-ueding/geo-activity-playground/issues/366), [GH-476](https://github.com/martin-ueding/geo-activity-playground/issues/476))
+  - The maps on an activity page use that layer on top of the colorful cluster layer instead of drawing their own outlines, and list how many tiles fall into each category. ([GH-366](https://github.com/martin-ueding/geo-activity-playground/issues/366))
+  - The two new border colors can be adjusted under Settings → Display → Color Strategy.
+- Tiles marked as inaccessible are drawn in a separate “Inaccessible Tiles” map layer instead of being hatched into every explorer tile layer. That way the marks can be toggled independently of the explorer layer, and they are available as their own overlay tile URL `/explorer/{zoom}/inaccessible-tile/{z}/{x}/{y}.png`.
+- Improve database performance by compressing the heatmap cache, adding more indices and regularly vacuuming the database.
+
+Fixed:
+
+- Tiles marked as inaccessible are left out of the downloads of missing tiles in the explorer tile map, the square planner and the `export-kml` command. ([GH-479](https://github.com/martin-ueding/geo-activity-playground/issues/479))
+- Map previews that load their geometry over the network, like the ones on the home page, no longer stay blank at random. Their scripts ran while the page was still parsing, whereas the script defining `add_map` only ran afterwards, so every preview whose data arrived early failed. They are module scripts now and therefore run in order.
+- Metadata extraction regexes now match on Windows as well. The relative path was handed to the regex with the platform's separator, so patterns written with `/` never matched and every activity ended up with kind and equipment “Unknown”. The path is now always normalized to forward slashes.
+
 ## Version 1.44.0 — 2026-08-02
 
 Added:
