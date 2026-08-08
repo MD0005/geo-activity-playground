@@ -173,6 +173,11 @@
 
 <code><pre class="tile-urls">/explorer/14/tile/{z}/{x}/{y}.png?color_strategy=latest_new&amp;activity_id=123</pre></code>
 
+<p>{{ _('The track of the most recent activity that discovered a tile at the given zoom level is available as a red line in its own layer. Append <code>?activity_id=…</code> to pick a specific activity instead:')|safe }}</p>
+
+<code><pre class="tile-urls">/explorer/14/latest-new-tiles-activity/{z}/{x}/{y}.png
+/explorer/17/latest-new-tiles-activity/{z}/{x}/{y}.png</pre></code>
+
 <p>{{ _('The tiles that you have marked as inaccessible form their own layer that you can combine with any of the above:') }}</p>
 
 <code><pre class="tile-urls">/explorer/14/inaccessible-tile/{z}/{x}/{y}.png
@@ -194,7 +199,7 @@
 
 <code><pre class="tile-urls">/explorer/style.json</pre></code>
 
-<p>{{ _('Pass <code>layers</code> as a comma-separated list of <code>zoom:kind</code> entries, where <code>kind</code> is either a color strategy or the literal <code>inaccessible</code>, to control exactly which layers are combined and in which order:')|safe }}</p>
+<p>{{ _('Pass <code>layers</code> as a comma-separated list of <code>zoom:kind</code> entries, where <code>kind</code> is either a color strategy, the literal <code>inaccessible</code> or the literal <code>latest_new_activity</code>, to control exactly which layers are combined and in which order:')|safe }}</p>
 
 <code><pre class="tile-urls">/explorer/style.json?layers=14:colorful_cluster,14:inaccessible,17:colorful_cluster,17:inaccessible</pre></code>
 

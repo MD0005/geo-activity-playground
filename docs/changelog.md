@@ -24,6 +24,7 @@ Added:
 - Inaccessible tiles can optionally count toward cluster and square.. ([GH-481](https://github.com/martin-ueding/geo-activity-playground/issues/481))
 - The rendering of explorer tiles can now be fully customized. For each kind of special tile (e.g. visited, missing, new in this activity), you can set a fill color, border color, border style and stripe color. ([GH-366](https://github.com/martin-ueding/geo-activity-playground/issues/366))
 - Expose the selection of explorer zoom levels other than 14 and 17. ([GH-483](https://github.com/martin-ueding/geo-activity-playground/issues/483))
+- New map layer per explorer zoom level that draws the track of the most recent activity which discovered a tile at that zoom level as a red line. It is available as the overlay tile URL `/explorer/{zoom}/latest-new-tiles-activity/{z}/{x}/{y}.png` and as the `latest_new_activity` kind in the combined style JSON. ([GH-366](https://github.com/martin-ueding/geo-activity-playground/issues/366))
 
 Changed:
 

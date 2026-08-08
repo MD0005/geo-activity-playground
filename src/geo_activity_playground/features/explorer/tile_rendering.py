@@ -12,6 +12,7 @@ from typing import Any, NamedTuple
 import matplotlib
 import numpy as np
 import pandas as pd
+from PIL import Image, ImageDraw
 
 from ...core.coordinates import Bounds
 from ...core.datamodel import UiConfig
@@ -30,6 +31,7 @@ from .model import BorderStroke, TileStyle, TileStyleName, get_tile_styles
 
 SQUARE_LINE_WIDTH = 3
 SQUARE_COLOR = np.array([228, 26, 28, 255], dtype=np.float32) / 256.0
+ACTIVITY_LINE_COLOR = np.array([228, 26, 28, 255], dtype=np.float32) / 255.0
 GRID_COLOR = np.array([0.5, 0.5, 0.5, 0.5], dtype=np.float32)
 
 STRIPES_PER_TILE = 8
@@ -680,6 +682,31 @@ def render_inaccessible_tile_image(
                 sub_tile.y_start : sub_tile.y_start + sub_tile.width,
                 sub_tile.x_start : sub_tile.x_start + sub_tile.width,
             ] = pattern.rasterize((sub_tile.width, sub_tile.width))
+    return result
+
+
+def render_activity_line_tile_image(
+    time_series: pd.DataFrame, z: int, x: int, y: int
+) -> np.ndarray:
+    """Draw the track of one activity into a raster tile."""
+    mask = Image.new("L", (OSM_TILE_SIZE, OSM_TILE_SIZE))
+    draw = ImageDraw.Draw(mask)
+    line_width = min(6, max(2, z - 10))
+    for _segment_id, group in time_series.groupby("segment_id"):
+        pixels = (
+            np.array([group["x"] * 2**z - x, group["y"] * 2**z - y]).T * OSM_TILE_SIZE
+        )
+        if len(pixels) < 2:
+            continue
+        draw.line(
+            [(px, py) for px, py in pixels],
+            fill=255,
+            width=line_width,
+            joint="curve",
+        )
+    result = np.zeros((OSM_TILE_SIZE, OSM_TILE_SIZE, 4), dtype=np.float32)
+    result[:, :, :3] = ACTIVITY_LINE_COLOR[:3]
+    result[:, :, 3] = np.array(mask, dtype=np.float32) / 255.0
     return result
 
 

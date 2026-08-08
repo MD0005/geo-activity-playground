@@ -107,7 +107,12 @@ export function add_layers_to_map(map, config) {
         { name: "New Tiles & Cluster Growth", strategy: "latest_new", activity: true },
     ];
     const inaccessibleName = "Inaccessible Tiles";
-    const explorerNames = new Set([...explorerStrategies.map(s => s.name), inaccessibleName]);
+    const latestNewActivityName = "New Tiles Activity Track";
+    const explorerNames = new Set([
+        ...explorerStrategies.map(s => s.name),
+        inaccessibleName,
+        latestNewActivityName
+    ]);
 
     // Prefix with "Explorer {zoom}" when there is more than one zoom level, so that
     // the entries cluster by zoom level in the layer control.
@@ -146,6 +151,11 @@ export function add_layers_to_map(map, config) {
         }
         overlay_maps[labelFor(inaccessibleName, z)] = L.tileLayer(
             `/explorer/${z}/inaccessible-tile/{z}/{x}/{y}.png`,
+            { maxZoom: 19, attribution }
+        );
+        overlay_maps[labelFor(latestNewActivityName, z)] = L.tileLayer(
+            `/explorer/${z}/latest-new-tiles-activity/{z}/{x}/{y}.png`
+            + (activityParam ? `?${activityParam.slice(1)}` : ''),
             { maxZoom: 19, attribution }
         );
     }

@@ -43,9 +43,10 @@ from ...core.meta_search import (
     is_search_active,
     parse_search_params,
 )
-from ...core.raster_map import ImageTransform, TileGetter
+from ...core.raster_map import OSM_TILE_SIZE, ImageTransform, TileGetter
 from ...core.tile_visits import (
     get_activity_ids_in_bounds,
+    get_latest_new_tiles_activity_id,
     get_tile_count,
     get_tile_history_df,
     get_tile_medians,
@@ -93,6 +94,7 @@ from .tile_rendering import (
     _resolve_color_strategy,
     _tile_bounds,
     hex_color_to_tuple,
+    render_activity_line_tile_image,
     render_inaccessible_tile_image,
     render_tile_style_preview,
 )
@@ -175,6 +177,22 @@ def _inaccessible_layer(zoom: int) -> tuple[str, dict, dict]:
     }
     layer = {
         "id": f"gap-inaccessible-layer-{zoom}",
+        "type": "raster",
+        "source": source_id,
+        "paint": {"raster-opacity": 0.8},
+    }
+    return source_id, source, layer
+
+
+def _latest_new_tiles_activity_layer(zoom: int) -> tuple[str, dict, dict]:
+    source_id = f"gap-latest-new-tiles-activity-{zoom}"
+    source = {
+        "type": "raster",
+        "tiles": [f"/explorer/{zoom}/latest-new-tiles-activity/{{z}}/{{x}}/{{y}}.png"],
+        "tileSize": 256,
+    }
+    layer = {
+        "id": f"gap-latest-new-tiles-activity-layer-{zoom}",
         "type": "raster",
         "source": source_id,
         "paint": {"raster-opacity": 0.8},
@@ -454,6 +472,8 @@ def make_explorer_blueprint(
         for zoom, kind in layer_specs:
             if kind == "inaccessible":
                 source_id, source, layer = _inaccessible_layer(zoom)
+            elif kind == "latest_new_activity":
+                source_id, source, layer = _latest_new_tiles_activity_layer(zoom)
             else:
                 source_id, source, layer = _explorer_layer(zoom, kind)
             sources[source_id] = source
@@ -543,6 +563,38 @@ def make_explorer_blueprint(
             stripe_color=hex_color_to_tuple(colors["stripe_color"]),
         )
         return _png_response(render_tile_style_preview([spec]))
+
+    @blueprint.route(
+        "/<int:zoom>/latest-new-tiles-activity/<int:z>/<int:x>/<int:y>.png"
+    )
+    def latest_new_tiles_activity_tile(
+        zoom: int, z: int, x: int, y: int
+    ) -> ResponseReturnValue:
+        empty = np.zeros((OSM_TILE_SIZE, OSM_TILE_SIZE, 4), dtype=np.float32)
+        activity_id = request.args.get(
+            "activity_id", type=int
+        ) or get_latest_new_tiles_activity_id(zoom)
+        if activity_id is None:
+            return _png_response(empty)
+
+        # The activity tiles tell us cheaply whether the track can be visible
+        # here at all, which spares us reading its time series for most tiles.
+        tile_bounds = _tile_bounds(zoom, z, x, y)
+        if activity_id not in get_activity_ids_in_bounds(
+            zoom,
+            tile_bounds.x_min,
+            tile_bounds.x_max,
+            tile_bounds.y_min,
+            tile_bounds.y_max,
+        ):
+            return _png_response(empty)
+
+        activity = DB.session.get(Activity, activity_id)
+        if activity is None:
+            return _png_response(empty)
+        return _png_response(
+            render_activity_line_tile_image(activity.time_series, z, x, y)
+        )
 
     @blueprint.route("/<int:zoom>/inaccessible-tile/<int:z>/<int:x>/<int:y>.png")
     def inaccessible_tile(zoom: int, z: int, x: int, y: int) -> ResponseReturnValue:
