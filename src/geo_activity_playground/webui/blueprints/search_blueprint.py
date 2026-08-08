@@ -28,7 +28,6 @@ def make_search_blueprint(
 ) -> Blueprint:
     blueprint = Blueprint("search", __name__, template_folder="templates")
     aggregate_map_activity_cap = 100
-    aggregate_map_max_lines = 100
 
     @blueprint.route("/")
     def index():
@@ -110,13 +109,14 @@ def make_search_blueprint(
         primitives = parse_search_params(request.args)
         activities = apply_search_filter(primitives).iloc[::-1]
         activity_ids = activities["id"].head(aggregate_map_activity_cap).tolist()
+        rank = {activity_id: i for i, activity_id in enumerate(activity_ids)}
         features = []
         cmap = colormaps["Dark2"]
-        line_count = 0
-        for i, activity in enumerate(
+        for activity in sorted(
             DB.session.scalars(
                 sqlalchemy.select(Activity).where(Activity.id.in_(activity_ids))
-            ).all()
+            ).all(),
+            key=lambda activity: rank[activity.id],
         ):
             time_series = activity.time_series
             if "latitude" not in time_series or "longitude" not in time_series:
@@ -126,9 +126,8 @@ def make_search_blueprint(
                 if "segment_id" in time_series.columns
                 else [(0, time_series)]
             )
+            color = to_hex(cmap(rank[activity.id] % 8))
             for _, group in grouped:
-                if line_count >= aggregate_map_max_lines:
-                    break
                 coordinates = [
                     [lon, lat]
                     for lat, lon in zip(group["latitude"], group["longitude"])
@@ -141,13 +140,10 @@ def make_search_blueprint(
                             properties={
                                 "activity_id": activity.id,
                                 "activity_name": activity.name,
-                                "color": to_hex(cmap(i % 8)),
+                                "color": color,
                             },
                         )
                     )
-                    line_count += 1
-            if line_count >= aggregate_map_max_lines:
-                break
         return Response(
             geojson.dumps(geojson.FeatureCollection(features=features)),
             mimetype="application/json",
