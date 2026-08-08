@@ -32,6 +32,7 @@ Changed:
 
 Fixed:
 
+- The heatmap overlay on the Explorer Tiles page ignored the activity filter.
 - Activities of a kind that does not count for explorer tiles could still become the recorded first or last visitor of a tile when an activity's start time changed. Car and train rides no longer leak into the tile visit metadata that way.
 - The cluster size evolution plot includes the moment the first cluster tile appeared, which was previously omitted. ([GH-481](https://github.com/martin-ueding/geo-activity-playground/issues/481))
 - Marking a tile as inaccessible updates the “Inaccessible Tiles” layer right away. ([GH-478](https://github.com/martin-ueding/geo-activity-playground/issues/478))

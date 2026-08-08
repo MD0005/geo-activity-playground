@@ -7,6 +7,7 @@ from types import SimpleNamespace
 import pandas as pd
 import sqlalchemy as sa
 
+import geo_activity_playground.features.explorer.filtered as filtered_module
 from geo_activity_playground.core.activities import ActivityRepository
 from geo_activity_playground.core.config import ConfigAccessor
 from geo_activity_playground.core.coordinates import Bounds
@@ -30,7 +31,9 @@ from geo_activity_playground.core.tile_visits import (
     remove_activity_from_tile_state,
 )
 from geo_activity_playground.features.explorer.clustering import (
+    CLUSTER_HISTORY_CLAIM_TIMEOUT,
     TileEvolutionState,
+    _claim_cluster_history_rebuild,
     _compute_cluster_evolution,
     _compute_square_history,
     _find_root,
@@ -51,12 +54,17 @@ from geo_activity_playground.features.explorer.clustering import (
     rebuild_cluster_history_if_stale,
 )
 from geo_activity_playground.features.explorer.filtered import (
+    delete_outdated_filtered_cluster_cache,
+    delete_stale_filtered_cluster_cache,
+    get_filtered_cluster_cache_stats,
     get_filtered_cluster_state,
     get_filtered_tile_visits_in_bounds,
 )
 from geo_activity_playground.features.explorer.model import (
     ClusterHistoryEvent,
+    ClusterHistoryStatus,
     ClusterTileActivation,
+    FilteredClusterCache,
     InaccessibleTile,
 )
 from geo_activity_playground.features.heatmap.blueprint import _get_counts
@@ -963,3 +971,138 @@ def test_explorer_page_counters_follow_the_search_filter(app) -> None:
     assert "There are 1 cluster tiles" in unfiltered.text
     assert "You have 4 explored tiles" in filtered.text
     assert "There are 0 cluster tiles" in filtered.text
+
+
+def test_filtered_cluster_state_is_computed_once_per_filter(app, monkeypatch) -> None:
+    with app.app_context():
+        ride = Kind(name="Ride")
+        DB.session.add(ride)
+        DB.session.commit()
+        _add_activity_tiles(1, ride, _PLUS_VISITED + [(1, 0)], dt.datetime(2026, 1, 1))
+
+        calls = []
+        original = filtered_module._compute_filtered_cluster_state
+
+        def counting(zoom, activity_ids):
+            calls.append(zoom)
+            return original(zoom, activity_ids)
+
+        monkeypatch.setattr(
+            filtered_module, "_compute_filtered_cluster_state", counting
+        )
+
+        first = get_filtered_cluster_state(14, frozenset({1}))
+        # A second worker process would start with an empty in-process cache but
+        # must still find the stored row.
+        filtered_module._process_cache.clear()
+        second = get_filtered_cluster_state(14, frozenset({1}))
+
+        assert calls == [14]
+        assert first.membership == second.membership
+        assert first.max_square_size == second.max_square_size
+
+        # New activity tiles change the generation, so the row is recomputed.
+        _add_activity_tiles(2, ride, [(9, 9)], dt.datetime(2026, 1, 2))
+        filtered_module._process_cache.clear()
+        get_filtered_cluster_state(14, frozenset({1}))
+        assert calls == [14, 14]
+
+
+def test_storing_a_filtered_state_tolerates_a_concurrent_writer(app) -> None:
+    """A worker that loses the insert race must not raise."""
+    with app.app_context():
+        ride = Kind(name="Ride")
+        DB.session.add(ride)
+        DB.session.commit()
+        _add_activity_tiles(1, ride, _PLUS_VISITED, dt.datetime(2026, 1, 1))
+
+        state = get_filtered_cluster_state(14, frozenset({1}))
+        query_hash = filtered_module._query_hash(frozenset({1}))
+        generation = filtered_module._activity_tile_generation()
+
+        # Simulate the other worker having inserted the row already by writing
+        # it twice; the second call must be a no-op rather than an error.
+        filtered_module._store_filtered_cluster_state(query_hash, 14, generation, state)
+        filtered_module._store_filtered_cluster_state(query_hash, 14, generation, state)
+
+        assert (
+            DB.session.query(FilteredClusterCache)
+            .filter(FilteredClusterCache.query_hash == query_hash)
+            .count()
+            == 1
+        )
+
+
+def test_only_one_worker_claims_a_cluster_history_rebuild(app) -> None:
+    """A second worker must not join a rebuild that is already running."""
+    with app.app_context():
+        _add_tile_visits(_MIXED_TILES)
+        DB.session.add(ClusterHistoryStatus(zoom=14, stale=True))
+        DB.session.commit()
+
+        assert _claim_cluster_history_rebuild(14) is True
+        assert _claim_cluster_history_rebuild(14) is False
+
+        # A claim from a crashed worker is taken over after the timeout.
+        status = DB.session.get(ClusterHistoryStatus, 14)
+        status.rebuilding_since = (
+            dt.datetime.now() - CLUSTER_HISTORY_CLAIM_TIMEOUT - dt.timedelta(minutes=1)
+        )
+        DB.session.commit()
+        assert _claim_cluster_history_rebuild(14) is True
+
+
+def test_rebuild_if_stale_releases_the_claim(app) -> None:
+    with app.app_context():
+        _add_tile_visits(_MIXED_TILES)
+
+        assert rebuild_cluster_history_if_stale(14) is True
+        status = DB.session.get(ClusterHistoryStatus, 14)
+        assert status.rebuilding_since is None
+        assert not status.stale
+
+
+def test_filtered_cluster_cache_cleanup(app) -> None:
+    with app.app_context():
+        ride = Kind(name="Ride")
+        DB.session.add(ride)
+        DB.session.commit()
+        _add_activity_tiles(1, ride, _PLUS_VISITED, dt.datetime(2026, 1, 1))
+
+        get_filtered_cluster_state(14, frozenset({1}))
+        count, size = get_filtered_cluster_cache_stats()
+        assert count == 1
+        assert size > 0
+
+        # A recent entry survives the stale cleanup.
+        assert (
+            delete_stale_filtered_cluster_cache(
+                dt.datetime.now() - dt.timedelta(days=182)
+            )
+            == 0
+        )
+        assert get_filtered_cluster_cache_stats()[0] == 1
+
+        # New activity tiles make the stored generation outdated.
+        _add_activity_tiles(2, ride, [(20, 20)], dt.datetime(2026, 1, 2))
+        assert delete_outdated_filtered_cluster_cache() == 1
+        assert get_filtered_cluster_cache_stats()[0] == 0
+
+
+def test_filtered_cluster_cache_stale_cleanup_drops_old_entries(app) -> None:
+    with app.app_context():
+        ride = Kind(name="Ride")
+        DB.session.add(ride)
+        DB.session.commit()
+        _add_activity_tiles(1, ride, _PLUS_VISITED, dt.datetime(2026, 1, 1))
+        get_filtered_cluster_state(14, frozenset({1}))
+
+        row = DB.session.scalar(sa.select(FilteredClusterCache))
+        row.last_used = dt.datetime.now() - dt.timedelta(days=200)
+        DB.session.commit()
+
+        dropped = delete_stale_filtered_cluster_cache(
+            dt.datetime.now() - dt.timedelta(days=182)
+        )
+        assert dropped == 1
+        assert get_filtered_cluster_cache_stats() == (0, 0)

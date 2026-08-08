@@ -1,3 +1,4 @@
+import datetime
 import decimal
 import json
 import logging
@@ -53,6 +54,11 @@ from ...features.explorer.clustering import (
     mark_cluster_history_stale,
     rebuild_cluster_history,
 )
+from ...features.explorer.filtered import (
+    delete_filtered_cluster_cache,
+    delete_stale_filtered_cluster_cache,
+    get_filtered_cluster_cache_stats,
+)
 from ...features.explorer.model import (
     TILE_STYLE_DEFAULTS,
     BorderStroke,
@@ -60,6 +66,7 @@ from ...features.explorer.model import (
     ClusterMembership,
     ClusterTileActivation,
     ExplorerTileBookmark,
+    FilteredClusterCache,
     TileStyleName,
     get_tile_styles,
 )
@@ -219,6 +226,7 @@ def _truncate_user_content_tables() -> None:
     DB.session.execute(sqlalchemy.delete(ClusterHistoryEvent))
     DB.session.execute(sqlalchemy.delete(ClusterTileActivation))
     DB.session.execute(sqlalchemy.delete(ClusterMembership))
+    DB.session.execute(sqlalchemy.delete(FilteredClusterCache))
     DB.session.execute(sqlalchemy.delete(Photo))
     DB.session.execute(sqlalchemy.delete(Activity))
     DB.session.execute(sqlalchemy.delete(Segment))
@@ -322,6 +330,25 @@ def make_settings_blueprint(
                     _("Tile visit state has been reset and re-indexed."),
                     FlashTypes.SUCCESS,
                 )
+            elif action == "clear_filtered_cluster_cache":
+                logger.info("User requested reset of the filtered cluster cache.")
+                dropped = delete_filtered_cluster_cache()
+                flasher.flash_message(
+                    _("Cleared %(dropped)s cached filtered cluster states.")
+                    % {"dropped": dropped},
+                    FlashTypes.SUCCESS,
+                )
+            elif action == "cleanup_filtered_cluster_cache_stale":
+                logger.info("User requested cleanup of the filtered cluster cache.")
+                cutoff = datetime.datetime.now() - datetime.timedelta(days=182)
+                dropped = delete_stale_filtered_cluster_cache(cutoff)
+                flasher.flash_message(
+                    _(
+                        "Dropped %(dropped)s cached filtered cluster states (unused for six months)."
+                    )
+                    % {"dropped": dropped},
+                    FlashTypes.SUCCESS,
+                )
             elif action == "rebuild_cluster_history":
                 logger.info("User requested rebuild of the cluster history.")
                 for zoom in config_accessor.ui().explorer_zoom_levels:
@@ -414,7 +441,12 @@ def make_settings_blueprint(
                     FlashTypes.SUCCESS,
                 )
             return redirect(url_for(".maintenance"))
-        return render_template("settings/maintenance.html.j2")
+        cache_count, cache_bytes = get_filtered_cluster_cache_stats()
+        return render_template(
+            "settings/maintenance.html.j2",
+            filtered_cluster_cache_count=cache_count,
+            filtered_cluster_cache_kib=round(cache_bytes / 1024),
+        )
 
     @blueprint.route("/language", methods=["GET", "POST"])
     @needs_authentication(authenticator)
@@ -893,6 +925,7 @@ def make_settings_blueprint(
                 # flagged, because replaying it is expensive.
                 for zoom in ui_config.explorer_zoom_levels:
                     compute_current_state_for_zoom(zoom)
+                delete_filtered_cluster_cache()
                 mark_cluster_history_stale(ui_config.explorer_zoom_levels)
             flasher.flash_message(
                 _("Updated explorer tile settings."), FlashTypes.SUCCESS

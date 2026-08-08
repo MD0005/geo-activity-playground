@@ -18,6 +18,20 @@ METADATA_EXTRACTION_REGEXES = [
 ]
 
 
+@pytest.fixture(autouse=True)
+def _clear_process_caches():
+    """Drop caches that live in module state, so tests do not see each other.
+
+    Each test gets a fresh in-memory database whose ids restart from one, which
+    makes cache keys from different tests collide.
+    """
+    from geo_activity_playground.features.explorer import filtered
+
+    filtered._process_cache.clear()
+    yield
+    filtered._process_cache.clear()
+
+
 @pytest.fixture
 def testdata_dir() -> pathlib.Path:
     return pathlib.Path(__file__).parent.parent / "testdata"

@@ -77,6 +77,7 @@ from .clustering import (
     rebuild_cluster_history_if_stale,
 )
 from .filtered import (
+    delete_filtered_cluster_cache,
     get_filtered_cluster_state,
     get_filtered_tile_visits_in_bounds,
     get_filtered_visited_tiles,
@@ -806,6 +807,7 @@ def _refresh_after_inaccessible_change(zoom: int) -> None:
     if not ConfigAccessor().ui().count_inaccessible_in_cluster:
         return
     compute_current_state_for_zoom(zoom)
+    delete_filtered_cluster_cache()
     mark_cluster_history_stale([zoom])
 
 

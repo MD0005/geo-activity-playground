@@ -9,8 +9,12 @@ The viewport-limited parts are queried directly because they are small. The
 cluster is a global property, so it is computed once per filter and cached.
 """
 
-import functools
+import datetime
+import hashlib
+import json
 import logging
+import threading
+import zlib
 
 import pandas as pd
 import sqlalchemy as sa
@@ -19,14 +23,24 @@ from ...core.coordinates import Bounds
 from ...core.datamodel import DB, Activity, ActivityTile
 from ...core.tile_visits import TileInfo
 from .clustering import (
-    ClusterReplayState,
     _find_root,
     compute_current_cluster_state,
     compute_max_square,
     get_counted_inaccessible_tiles,
 )
+from .model import FilteredClusterCache
 
 logger = logging.getLogger(__name__)
+
+# Deduplication happens on two levels, because the server runs several worker
+# processes with several threads each. This lock only covers the threads of one
+# worker; across workers the stored row is what prevents repeated work. That is
+# a check rather than a mutex, so a cold cache can still be computed once per
+# worker. Holding a database lock for the whole computation instead would block
+# the other workers for seconds, which is the worse trade.
+_compute_lock = threading.Lock()
+_process_cache: dict[tuple[str, int], tuple[int, "FilteredClusterState"]] = {}
+_PROCESS_CACHE_SIZE = 4
 
 
 def _activity_tile_generation() -> int:
@@ -103,37 +117,186 @@ def get_filtered_visited_tiles(
 class FilteredClusterState:
     """Cluster membership and biggest square of one filtered tile set."""
 
-    def __init__(self, state: ClusterReplayState, tiles: set[tuple[int, int]]) -> None:
-        self.membership = {
-            tile: _find_root(state.parents, tile) for tile in state.cluster_tiles
-        }
-        self.square_x, self.square_y, self.max_square_size = compute_max_square(tiles)
+    def __init__(
+        self,
+        membership: dict[tuple[int, int], tuple[int, int]],
+        square: tuple[int | None, int | None, int],
+    ) -> None:
+        self.membership = membership
+        self.square_x, self.square_y, self.max_square_size = square
 
         sizes: dict[tuple[int, int], int] = {}
-        for root in self.membership.values():
+        for root in membership.values():
             sizes[root] = sizes.get(root, 0) + 1
         self.max_cluster_id = max(sizes, key=sizes.get, default=None)
         self.max_cluster_size = sizes.get(self.max_cluster_id, 0)
-        self.num_cluster_tiles = len(self.membership)
+        self.num_cluster_tiles = len(membership)
+
+    @classmethod
+    def from_tiles(cls, tiles: set[tuple[int, int]]) -> "FilteredClusterState":
+        state = compute_current_cluster_state(tiles)
+        return cls(
+            {tile: _find_root(state.parents, tile) for tile in state.cluster_tiles},
+            compute_max_square(tiles),
+        )
+
+    def to_payload(self) -> bytes:
+        return zlib.compress(
+            json.dumps(
+                {
+                    "membership": [
+                        [tile[0], tile[1], root[0], root[1]]
+                        for tile, root in sorted(self.membership.items())
+                    ],
+                    "square": [self.square_x, self.square_y, self.max_square_size],
+                },
+                separators=(",", ":"),
+            ).encode()
+        )
+
+    @classmethod
+    def from_payload(cls, payload: bytes) -> "FilteredClusterState":
+        raw = json.loads(zlib.decompress(payload))
+        return cls(
+            {(e[0], e[1]): (e[2], e[3]) for e in raw["membership"]},
+            tuple(raw["square"]),  # type: ignore[arg-type]
+        )
 
 
-@functools.lru_cache(maxsize=8)
-def _filtered_cluster_state(
-    zoom: int, activity_ids: frozenset[int], _generation: int
+def _query_hash(activity_ids: frozenset[int]) -> str:
+    return hashlib.sha256(",".join(map(str, sorted(activity_ids))).encode()).hexdigest()
+
+
+def _compute_filtered_cluster_state(
+    zoom: int, activity_ids: frozenset[int]
 ) -> FilteredClusterState:
     logger.info(f"Computing filtered cluster state for {zoom=}.")
     tiles = get_filtered_visited_tiles(
         zoom, activity_ids
     ) | get_counted_inaccessible_tiles(zoom)
-    return FilteredClusterState(compute_current_cluster_state(tiles), tiles)
+    return FilteredClusterState.from_tiles(tiles)
+
+
+def _store_filtered_cluster_state(
+    query_hash: str, zoom: int, generation: int, state: FilteredClusterState
+) -> None:
+    """Write the cache row, tolerating a worker that got there first.
+
+    Two workers can compute the same cold entry at the same time, in which case
+    the second insert hits the unique constraint. Both computed the same thing,
+    so losing the race is not an error.
+    """
+    payload = state.to_payload()
+    now = datetime.datetime.now()
+    try:
+        row = DB.session.scalar(
+            sa.select(FilteredClusterCache).where(
+                FilteredClusterCache.query_hash == query_hash,
+                FilteredClusterCache.zoom == zoom,
+            )
+        )
+        if row is None:
+            row = FilteredClusterCache(query_hash=query_hash, zoom=zoom)
+            DB.session.add(row)
+        row.generation = generation
+        row.payload = payload
+        row.last_used = now
+        DB.session.commit()
+    except sa.exc.IntegrityError:
+        DB.session.rollback()
+        logger.debug("Another worker stored the same filtered cluster state first.")
+    except sa.exc.OperationalError:
+        DB.session.rollback()
+        logger.warning("Could not store the filtered cluster state, continuing.")
 
 
 def get_filtered_cluster_state(
     zoom: int, activity_ids: frozenset[int]
 ) -> FilteredClusterState:
-    """Cluster state of a filtered tile set, cached per filter.
+    """Cluster state of a filtered tile set, computed at most once per filter.
 
-    A map view issues many tile image requests under the same filter, so the
-    cache turns the global computation into a once-per-view cost.
+    A map view issues many tile image requests under the same filter, spread
+    over several worker processes. The database row is what they share; the
+    small per-process cache in front of it only avoids the repeated read.
     """
-    return _filtered_cluster_state(zoom, activity_ids, _activity_tile_generation())
+    generation = _activity_tile_generation()
+    query_hash = _query_hash(activity_ids)
+
+    cached = _process_cache.get((query_hash, zoom))
+    if cached is not None and cached[0] == generation:
+        return cached[1]
+
+    with _compute_lock:
+        # Another thread of this worker may have finished while we waited.
+        cached = _process_cache.get((query_hash, zoom))
+        if cached is not None and cached[0] == generation:
+            return cached[1]
+
+        row = DB.session.scalar(
+            sa.select(FilteredClusterCache).where(
+                FilteredClusterCache.query_hash == query_hash,
+                FilteredClusterCache.zoom == zoom,
+            )
+        )
+        if row is not None and row.generation == generation:
+            state = FilteredClusterState.from_payload(row.payload)
+            row.last_used = datetime.datetime.now()
+            DB.session.commit()
+        else:
+            state = _compute_filtered_cluster_state(zoom, activity_ids)
+            _store_filtered_cluster_state(query_hash, zoom, generation, state)
+
+        _process_cache[(query_hash, zoom)] = (generation, state)
+        while len(_process_cache) > _PROCESS_CACHE_SIZE:
+            _process_cache.pop(next(iter(_process_cache)))
+        return state
+
+
+def delete_filtered_cluster_cache() -> int:
+    """Drop every cached filtered cluster state."""
+    _process_cache.clear()
+    result = DB.session.execute(sa.delete(FilteredClusterCache))
+    DB.session.commit()
+    return int(getattr(result, "rowcount", 0) or 0)
+
+
+def delete_stale_filtered_cluster_cache(older_than: datetime.datetime) -> int:
+    """Drop cached states that have not been used since ``older_than``.
+
+    Every distinct filter a user tries leaves a row behind, so without this the
+    table grows with the searches rather than with the data.
+    """
+    _process_cache.clear()
+    result = DB.session.execute(
+        sa.delete(FilteredClusterCache).where(
+            sa.or_(
+                FilteredClusterCache.last_used.is_(None),
+                FilteredClusterCache.last_used < older_than,
+            )
+        )
+    )
+    DB.session.commit()
+    return int(getattr(result, "rowcount", 0) or 0)
+
+
+def delete_outdated_filtered_cluster_cache() -> int:
+    """Drop cached states that no longer match the stored activity tiles."""
+    _process_cache.clear()
+    result = DB.session.execute(
+        sa.delete(FilteredClusterCache).where(
+            FilteredClusterCache.generation != _activity_tile_generation()
+        )
+    )
+    DB.session.commit()
+    return int(getattr(result, "rowcount", 0) or 0)
+
+
+def get_filtered_cluster_cache_stats() -> tuple[int, int]:
+    """Number of cached states and their total compressed size in bytes."""
+    row = DB.session.execute(
+        sa.select(
+            sa.func.count(FilteredClusterCache.id),
+            sa.func.sum(sa.func.length(FilteredClusterCache.payload)),
+        )
+    ).one()
+    return int(row[0] or 0), int(row[1] or 0)

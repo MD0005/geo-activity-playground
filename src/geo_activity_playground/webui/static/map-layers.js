@@ -14,7 +14,6 @@
  * @param {number} config.squarePlanner.x - Square X coordinate
  * @param {number} config.squarePlanner.y - Square Y coordinate
  * @param {number} config.squarePlanner.size - Square size
- * @param {string} [config.heatmapExtraArgs] - Extra URL args for heatmap tiles
  * @param {number} [config.historyEventIndex] - Optional cluster-history cutoff index
  */
 export function add_layers_to_map(map, config) {
@@ -26,11 +25,11 @@ export function add_layers_to_map(map, config) {
         overlay = ['Colorful Cluster', 'Inaccessible Tiles'],
         ensureOverlays = [],
         squarePlanner = null,
-        heatmapExtraArgs = null,
         historyEventIndex = null,
         activityId = null,
-        // Search primitives as a query string. Explorer tiles are then derived
-        // for the matching activities only, instead of the stored state.
+        // Search primitives as a query string. The explorer tiles are then
+        // derived for the matching activities instead of the stored state, and
+        // the heatmap is restricted to them as well.
         searchQuery = null
     } = config;
 
@@ -70,9 +69,10 @@ export function add_layers_to_map(map, config) {
     };
 
     // Build heatmap URL with optional extra args
+    // The heatmap and the explorer tiles honor the same filter.
     let heatmap_url = "/heatmap/tile/{z}/{x}/{y}.png";
-    if (heatmapExtraArgs) {
-        heatmap_url += `?${heatmapExtraArgs}`;
+    if (searchQuery) {
+        heatmap_url += `?${searchQuery}`;
     }
 
     const hillshadeName = "Mapterhorn Hillshade";

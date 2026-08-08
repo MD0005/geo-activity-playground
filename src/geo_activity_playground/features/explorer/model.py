@@ -91,6 +91,38 @@ class ClusterHistoryStatus(DB.Model):
     computed_at: Mapped[datetime.datetime | None] = mapped_column(
         sa.DateTime, nullable=True
     )
+    rebuilding_since: Mapped[datetime.datetime | None] = mapped_column(
+        sa.DateTime, nullable=True
+    )
+    "Set while a worker process is replaying, so the others do not join in."
+
+
+class FilteredClusterCache(DB.Model):
+    """Cluster state of one activity filter, shared between worker processes.
+
+    Deriving the cluster for a filter means scanning every activity tile of a
+    zoom level, which is far too much to repeat for each tile image. The server
+    runs several worker processes, so an in-process cache would recompute this
+    once per worker; the table is what makes it a single computation.
+    """
+
+    __tablename__ = "filtered_cluster_cache"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    query_hash: Mapped[str] = mapped_column(sa.String, nullable=False)
+    zoom: Mapped[int] = mapped_column(sa.Integer, nullable=False)
+    generation: Mapped[int] = mapped_column(sa.Integer, nullable=False)
+    "Highest activity tile id the payload was computed from."
+    payload: Mapped[bytes] = mapped_column(sa.LargeBinary, nullable=False)
+    last_used: Mapped[datetime.datetime | None] = mapped_column(
+        sa.DateTime, nullable=True
+    )
+
+    __table_args__ = (
+        sa.UniqueConstraint(
+            "query_hash", "zoom", name="uq_filtered_cluster_cache_query_zoom"
+        ),
+    )
 
 
 class ExplorerSquare(DB.Model):

@@ -27,7 +27,6 @@
                 attribution: '{{ map_tile_attribution|safe }}',
                 baseLayer: 'Inverse Grayscale',
                 overlay: 'Heatmap',
-                heatmapExtraArgs: '{{ extra_args|safe }}' || null,
                 searchQuery: '{{ extra_args|safe }}' || null
             });
 

@@ -41,6 +41,32 @@
     </div>
 </div>
 
+<div class="card border-secondary mb-3">
+    <div class="card-header bg-secondary text-white">
+        <h5 class="card-title mb-0">{{ _('Filtered Explorer Tile Cache') }}</h5>
+    </div>
+    <div class="card-body">
+        <p class="card-text">
+            {{ _('Showing explorer tiles for an activity filter means deriving the clusters for that filter, which is cached so that the many tile images of one map view share the work. Each distinct filter you use leaves an entry behind.') }}
+        </p>
+        <p class="card-text">
+            {{ _('Currently holding %(count)s cached states using %(size)s KiB.', count=filtered_cluster_cache_count, size=filtered_cluster_cache_kib) }}
+        </p>
+        <form method="POST" class="d-inline">
+            <input type="hidden" name="action" value="cleanup_filtered_cluster_cache_stale">
+            <button type="submit" class="btn btn-secondary">
+                {{ _('Drop entries unused for six months') }}
+            </button>
+        </form>
+        <form method="POST" class="d-inline">
+            <input type="hidden" name="action" value="clear_filtered_cluster_cache">
+            <button type="submit" class="btn btn-outline-secondary">
+                {{ _('Clear the whole cache') }}
+            </button>
+        </form>
+    </div>
+</div>
+
 <div class="card border-warning mb-3">
     <div class="card-header bg-warning text-dark">
         <h5 class="card-title mb-0">{{ _('Re-enrich All Activities') }}</h5>

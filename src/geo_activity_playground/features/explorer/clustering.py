@@ -253,13 +253,60 @@ def rebuild_cluster_history(zoom: int) -> None:
     DB.session.commit()
 
 
+CLUSTER_HISTORY_CLAIM_TIMEOUT = datetime.timedelta(minutes=30)
+
+
+def _claim_cluster_history_rebuild(zoom: int) -> bool:
+    """Try to become the one who rebuilds this zoom level.
+
+    The Explorer page requests its plots in parallel and the server runs several
+    worker processes, so without a claim two of them would delete and re-insert
+    the same history rows and collide. A single conditional ``UPDATE`` is atomic
+    in the database and therefore works across processes, unlike a lock held in
+    one of them. A claim that was never released, because the worker died, is
+    taken over after a timeout.
+    """
+    now = datetime.datetime.now()
+    result = DB.session.execute(
+        sa.update(ClusterHistoryStatus)
+        .where(
+            ClusterHistoryStatus.zoom == zoom,
+            ClusterHistoryStatus.stale,
+            sa.or_(
+                ClusterHistoryStatus.rebuilding_since.is_(None),
+                ClusterHistoryStatus.rebuilding_since
+                < now - CLUSTER_HISTORY_CLAIM_TIMEOUT,
+            ),
+        )
+        .values(rebuilding_since=now)
+    )
+    DB.session.commit()
+    return bool(result.rowcount)
+
+
 def rebuild_cluster_history_if_stale(zoom: int) -> bool:
     """Rebuild the history of a zoom level if needed. Returns whether it ran."""
+    # The lock only keeps the threads of this worker from piling up on the
+    # claim; the claim itself is what coordinates the worker processes.
     with _history_rebuild_lock:
         if not is_cluster_history_stale(zoom):
             return False
+        if DB.session.get(ClusterHistoryStatus, zoom) is None:
+            DB.session.add(ClusterHistoryStatus(zoom=zoom, stale=True))
+            DB.session.commit()
+        if not _claim_cluster_history_rebuild(zoom):
+            logger.info(
+                f"Another worker is rebuilding the cluster history for {zoom=}."
+            )
+            return False
         logger.info(f"Rebuilding outdated cluster history for {zoom=}.")
-        rebuild_cluster_history(zoom)
+        try:
+            rebuild_cluster_history(zoom)
+        finally:
+            status = DB.session.get(ClusterHistoryStatus, zoom)
+            if status is not None:
+                status.rebuilding_since = None
+                DB.session.commit()
         return True
 
 
