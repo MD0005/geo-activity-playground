@@ -1,4 +1,6 @@
 import datetime as dt
+import json
+import random
 import time
 from types import SimpleNamespace
 
@@ -6,10 +8,13 @@ import pandas as pd
 import sqlalchemy as sa
 
 from geo_activity_playground.core.activities import ActivityRepository
+from geo_activity_playground.core.config import ConfigAccessor
+from geo_activity_playground.core.coordinates import Bounds
 from geo_activity_playground.core.datamodel import (
     DB,
     Activity,
     ActivityTile,
+    Kind,
     TileVisit,
 )
 from geo_activity_playground.core.raster_map import OSM_TILE_SIZE
@@ -17,22 +22,42 @@ from geo_activity_playground.core.tile_visits import (
     _process_activity,
     _tiles_from_points,
     get_activity_ids_in_tile,
+    get_tile_count,
     get_tile_history_df,
     get_tile_visits_in_bounds,
+    get_visited_tiles,
+    rebuild_tile_visits_from_activity_tiles,
     remove_activity_from_tile_state,
 )
 from geo_activity_playground.features.explorer.clustering import (
-    CLUSTER_CHECKPOINT_INTERVAL,
     TileEvolutionState,
     _compute_cluster_evolution,
+    _compute_square_history,
+    _find_root,
+    compute_current_cluster_state,
+    compute_current_state_for_zoom,
+    compute_max_square,
+    get_cluster_history_latest_event_index,
+    get_cluster_id_for_tile,
     get_cluster_tile_activations_df,
-    get_cluster_tile_diff_for_activity,
+    get_cluster_tile_count,
     get_cluster_tiles_at_cutoff,
+    get_cluster_tiles_gained_by_activity,
+    get_covered_tiles,
+    is_cluster_history_stale,
+    mark_cluster_history_stale,
+    rebuild_cluster_history,
     rebuild_cluster_history_for_zoom,
+    rebuild_cluster_history_if_stale,
+)
+from geo_activity_playground.features.explorer.filtered import (
+    get_filtered_cluster_state,
+    get_filtered_tile_visits_in_bounds,
 )
 from geo_activity_playground.features.explorer.model import (
-    ClusterHistoryCheckpoint,
     ClusterHistoryEvent,
+    ClusterTileActivation,
+    InaccessibleTile,
 )
 from geo_activity_playground.features.heatmap.blueprint import _get_counts
 
@@ -137,11 +162,9 @@ def test_process_activity_updates_first_and_last_fields_in_db(app) -> None:
                 self.activities = {
                     1: SimpleNamespace(
                         id=1,
-                        kind=SimpleNamespace(consider_for_achievements=True),
                     ),
                     2: SimpleNamespace(
                         id=2,
-                        kind=SimpleNamespace(consider_for_achievements=True),
                     ),
                 }
                 self.series = {
@@ -209,7 +232,6 @@ def test_process_activity_prefers_non_missing_time_for_same_tile(app) -> None:
             def __init__(self) -> None:
                 self.activity = SimpleNamespace(
                     id=1,
-                    kind=SimpleNamespace(consider_for_achievements=True),
                 )
                 self.series = pd.DataFrame(
                     {
@@ -263,13 +285,11 @@ def test_process_activity_uses_activity_start_when_track_times_missing(app) -> N
                         id=1,
                         start=dt.datetime(2024, 1, 1, 9, 0, 0),
                         start_utc=dt.datetime(2024, 1, 1, 9, 0, 0, tzinfo=dt.UTC),
-                        kind=SimpleNamespace(consider_for_achievements=True),
                     ),
                     2: SimpleNamespace(
                         id=2,
                         start=dt.datetime(2024, 1, 2, 9, 0, 0),
                         start_utc=dt.datetime(2024, 1, 2, 9, 0, 0, tzinfo=dt.UTC),
-                        kind=SimpleNamespace(consider_for_achievements=True),
                     ),
                 }
                 self.series = {
@@ -386,11 +406,11 @@ def test_deterministic_ordering_for_activity_and_tile_history(app) -> None:
         assert tuple(history.iloc[0][["tile_x", "tile_y"]]) == (1, 1)
 
 
-def test_cluster_history_projection_and_checkpoints(app) -> None:
+def test_cluster_history_projection_records_every_event(app) -> None:
     with app.app_context():
         activity = Activity(id=1, name="Ride")
         DB.session.add(activity)
-        for i in range(CLUSTER_CHECKPOINT_INTERVAL + 5):
+        for i in range(1_005):
             DB.session.add(
                 TileVisit(
                     zoom=14,
@@ -413,16 +433,13 @@ def test_cluster_history_projection_and_checkpoints(app) -> None:
         assert DB.session.query(ClusterHistoryEvent).filter(
             ClusterHistoryEvent.zoom == 14
         ).count() == len(history)
-        checkpoint_indices = [
-            row.event_index
-            for row in DB.session.scalars(
-                sa.select(ClusterHistoryCheckpoint)
-                .where(ClusterHistoryCheckpoint.zoom == 14)
-                .order_by(ClusterHistoryCheckpoint.event_index)
-            ).all()
-        ]
-        assert checkpoint_indices[-1] == len(history)
-        assert CLUSTER_CHECKPOINT_INTERVAL in checkpoint_indices
+        # A single row of tiles never has four neighbors, so nothing clusters.
+        assert (
+            DB.session.query(ClusterTileActivation)
+            .filter(ClusterTileActivation.zoom == 14)
+            .count()
+            == 0
+        )
 
 
 def test_cluster_history_diff_for_activity(app) -> None:
@@ -488,12 +505,12 @@ def test_cluster_history_diff_for_activity(app) -> None:
         rebuild_cluster_history_for_zoom(14, history)
         before = get_cluster_tiles_at_cutoff(14, 4)
         after = get_cluster_tiles_at_cutoff(14, 5)
-        added, removed = get_cluster_tile_diff_for_activity(14, 2)
+        added = get_cluster_tiles_gained_by_activity(14, 2)
 
         assert (0, 0) not in before
         assert (0, 0) in after
         assert added == {(0, 0)}
-        assert removed == set()
+        assert get_cluster_tiles_gained_by_activity(14, 1) == set()
 
 
 def test_cluster_tile_activations_use_activation_time_not_first_visit(app) -> None:
@@ -603,3 +620,346 @@ def test_cluster_history_replay_latency_bound(app) -> None:
         _ = get_cluster_tiles_at_cutoff(14, 2_000)
         elapsed = time.perf_counter() - start
         assert elapsed < 1.0
+
+
+def _partition(state) -> set[frozenset[tuple[int, int]]]:
+    """Cluster membership as a partition, ignoring which tile represents it."""
+    groups: dict[tuple[int, int], set[tuple[int, int]]] = {}
+    for tile in state.cluster_tiles:
+        groups.setdefault(_find_root(state.parents, tile), set()).add(tile)
+    return {frozenset(members) for members in groups.values()}
+
+
+def _add_tile_visits(tiles: list[tuple[int, int]], zoom: int = 14) -> None:
+    """Store tiles as visits, one second apart, so the history has an order."""
+    DB.session.add(Activity(id=1, name="Ride"))
+    for i, (tile_x, tile_y) in enumerate(tiles):
+        moment = dt.datetime(2026, 1, 1, 10, 0, 0) + dt.timedelta(seconds=i)
+        DB.session.add(
+            TileVisit(
+                zoom=zoom,
+                tile_x=tile_x,
+                tile_y=tile_y,
+                first_activity_id=1,
+                first_time=moment,
+                last_activity_id=1,
+                last_time=moment,
+                visit_count=1,
+            )
+        )
+    DB.session.commit()
+
+
+# A 5x5 block with a hole, a detached 4x4 block, and a bridge between them. The
+# hole and the bridge make cluster membership and the biggest square disagree,
+# which is what makes this a meaningful comparison.
+_MIXED_TILES = (
+    [(x, y) for x in range(5) for y in range(5) if (x, y) != (2, 2)]
+    + [(x, y) for x in range(9, 13) for y in range(9, 13)]
+    + [(x, 6) for x in range(5, 10)]
+)
+
+
+def test_current_state_matches_history_replay(app) -> None:
+    with app.app_context():
+        _add_tile_visits(_MIXED_TILES)
+
+        history = get_tile_history_df(14)
+        rebuild_cluster_history_for_zoom(14, history)
+        replayed = get_cluster_tiles_at_cutoff(14, len(history))
+
+        current = compute_current_cluster_state(
+            {(tile_x, tile_y) for tile_x, tile_y in _MIXED_TILES}
+        )
+
+        assert current.cluster_tiles == replayed
+        assert current.cluster_tiles
+
+
+def test_current_state_partition_is_order_independent(app) -> None:
+    with app.app_context():
+        forward = compute_current_cluster_state(_MIXED_TILES)
+        backward = compute_current_cluster_state(list(reversed(_MIXED_TILES)))
+
+        assert _partition(forward) == _partition(backward)
+        assert forward.max_cluster_size == backward.max_cluster_size
+
+
+def test_max_square_matches_incremental_history(app) -> None:
+    with app.app_context():
+        _add_tile_visits(_MIXED_TILES)
+
+        state = TileEvolutionState()
+        _compute_square_history(get_tile_history_df(14), state, 14)
+
+        square_x, square_y, size = compute_max_square(_MIXED_TILES)
+
+        assert size == state.max_square_size
+        covered = set(_MIXED_TILES)
+        assert all(
+            (square_x + dx, square_y + dy) in covered
+            for dx in range(size)
+            for dy in range(size)
+        )
+
+
+def test_max_square_is_empty_without_tiles(app) -> None:
+    with app.app_context():
+        assert compute_max_square([]) == (None, None, 0)
+
+
+def test_max_square_matches_incremental_algorithm_on_random_sets() -> None:
+    """The from-scratch recurrence must agree with the incremental scan."""
+    rng = random.Random(20260808)
+    for _ in range(30):
+        tiles = sorted(
+            {
+                (rng.randrange(0, 12), rng.randrange(0, 12))
+                for _ in range(rng.randrange(20, 120))
+            }
+        )
+        frame = pd.DataFrame(
+            {
+                "tile_x": [tile[0] for tile in tiles],
+                "tile_y": [tile[1] for tile in tiles],
+                "time": [pd.Timestamp("2026-01-01T10:00:00")] * len(tiles),
+            }
+        )
+        reference = TileEvolutionState()
+        _compute_square_history(frame, reference, 14)
+
+        _x, _y, size = compute_max_square(tiles)
+        assert size == reference.max_square_size, tiles
+
+
+def test_cluster_history_starts_stale_and_clears_after_rebuild(app) -> None:
+    with app.app_context():
+        _add_tile_visits(_MIXED_TILES)
+
+        assert is_cluster_history_stale(14)
+        assert rebuild_cluster_history_if_stale(14) is True
+        assert not is_cluster_history_stale(14)
+        # A second call is a no-op, so pages do not pay for the replay again.
+        assert rebuild_cluster_history_if_stale(14) is False
+
+        assert (
+            DB.session.query(ClusterTileActivation)
+            .filter(ClusterTileActivation.zoom == 14)
+            .count()
+            > 0
+        )
+
+        mark_cluster_history_stale([14])
+        assert is_cluster_history_stale(14)
+
+
+def test_evolution_plot_endpoint_rebuilds_stale_history(app) -> None:
+    with app.app_context():
+        _add_tile_visits(_MIXED_TILES)
+        assert is_cluster_history_stale(14)
+
+    client = app.test_client()
+    response = client.get("/explorer/14/evolution/cluster.json")
+
+    assert response.status_code == 200
+    assert response.json["spec"] is not None
+    with app.app_context():
+        assert not is_cluster_history_stale(14)
+
+
+# A plus shape: the center (0, 0) has all four neighbors, except that (1, 0) is
+# a lake that can never be ridden. Without counting it, nothing clusters.
+_PLUS_VISITED = [(0, 0), (-1, 0), (0, 1), (0, -1)]
+_LAKE_TILE = (1, 0)
+
+
+def _enable_counting_inaccessible() -> None:
+    ConfigAccessor().ui().count_inaccessible_in_cluster = True
+    DB.session.commit()
+
+
+def test_inaccessible_tiles_do_not_count_by_default(app) -> None:
+    with app.app_context():
+        _add_tile_visits(_PLUS_VISITED)
+        DB.session.add(
+            InaccessibleTile(zoom=14, tile_x=_LAKE_TILE[0], tile_y=_LAKE_TILE[1])
+        )
+        DB.session.commit()
+
+        assert get_covered_tiles(14) == set(_PLUS_VISITED)
+        compute_current_state_for_zoom(14)
+        assert get_cluster_tile_count(14) == 0
+
+
+def test_inaccessible_tiles_complete_a_cluster_when_enabled(app) -> None:
+    with app.app_context():
+        _add_tile_visits(_PLUS_VISITED)
+        DB.session.add(
+            InaccessibleTile(zoom=14, tile_x=_LAKE_TILE[0], tile_y=_LAKE_TILE[1])
+        )
+        DB.session.commit()
+        _enable_counting_inaccessible()
+
+        assert get_covered_tiles(14) == set(_PLUS_VISITED) | {_LAKE_TILE}
+        compute_current_state_for_zoom(14)
+        assert get_cluster_id_for_tile(14, 0, 0) is not None
+        # The lake itself is not visited, so it must not inflate the tile count.
+        assert get_tile_count(14) == len(_PLUS_VISITED)
+
+
+def test_inaccessible_tiles_extend_the_square_when_enabled(app) -> None:
+    with app.app_context():
+        square = [(x, y) for x in range(3) for y in range(3) if (x, y) != (1, 1)]
+        _add_tile_visits(square)
+        DB.session.add(InaccessibleTile(zoom=14, tile_x=1, tile_y=1))
+        DB.session.commit()
+
+        assert compute_max_square(get_covered_tiles(14))[2] == 1
+
+        _enable_counting_inaccessible()
+        assert compute_max_square(get_covered_tiles(14))[2] == 3
+
+
+def test_inaccessible_tiles_are_seeded_at_the_origin_of_time(app) -> None:
+    with app.app_context():
+        _add_tile_visits(_PLUS_VISITED)
+        DB.session.add(
+            InaccessibleTile(zoom=14, tile_x=_LAKE_TILE[0], tile_y=_LAKE_TILE[1])
+        )
+        DB.session.commit()
+        _enable_counting_inaccessible()
+
+        rebuild_cluster_history(14)
+
+        # The center clusters on the last visit, not before it.
+        assert (0, 0) not in get_cluster_tiles_at_cutoff(14, 3)
+        assert (0, 0) in get_cluster_tiles_at_cutoff(14, 4)
+        # The lake was never ridden, so no activity may claim it.
+        activation = DB.session.scalar(
+            sa.select(ClusterTileActivation).where(
+                ClusterTileActivation.zoom == 14,
+                ClusterTileActivation.tile_x == 0,
+                ClusterTileActivation.tile_y == 0,
+            )
+        )
+        assert activation is not None
+        assert activation.activity_id == 1
+
+
+def test_current_state_and_history_agree_with_inaccessible_tiles(app) -> None:
+    with app.app_context():
+        _add_tile_visits(_MIXED_TILES)
+        # Fill the hole of the 5x5 block and one bridge gap.
+        for tile in [(2, 2), (5, 5)]:
+            DB.session.add(InaccessibleTile(zoom=14, tile_x=tile[0], tile_y=tile[1]))
+        DB.session.commit()
+        _enable_counting_inaccessible()
+
+        rebuild_cluster_history(14)
+        replayed = get_cluster_tiles_at_cutoff(
+            14, get_cluster_history_latest_event_index(14)
+        )
+        current = compute_current_cluster_state(get_covered_tiles(14))
+
+        assert current.cluster_tiles == replayed
+
+
+def _add_activity_tiles(activity_id: int, kind: Kind, tiles, start) -> None:
+    DB.session.add(
+        Activity(id=activity_id, name=f"A{activity_id}", kind=kind, start=start)
+    )
+    for tile_x, tile_y in tiles:
+        DB.session.add(
+            ActivityTile(
+                zoom=14,
+                tile_x=tile_x,
+                tile_y=tile_y,
+                activity_id=activity_id,
+                time=start,
+            )
+        )
+    DB.session.commit()
+
+
+def test_explorer_filter_excludes_kinds_from_tile_visits(app) -> None:
+    with app.app_context():
+        ride = Kind(name="Ride")
+        train = Kind(name="Train")
+        DB.session.add_all([ride, train])
+        DB.session.commit()
+
+        _add_activity_tiles(1, ride, [(0, 0), (1, 0)], dt.datetime(2026, 1, 1))
+        _add_activity_tiles(2, train, [(5, 5), (6, 5)], dt.datetime(2026, 1, 2))
+
+        rebuild_tile_visits_from_activity_tiles()
+        assert get_visited_tiles(14) == {(0, 0), (1, 0), (5, 5), (6, 5)}
+
+        ConfigAccessor().ui().explorer_filter_json = json.dumps({"kind": [ride.id]})
+        DB.session.commit()
+        rebuild_tile_visits_from_activity_tiles()
+
+        assert get_visited_tiles(14) == {(0, 0), (1, 0)}
+
+
+def test_filtered_cluster_state_is_smaller_than_unfiltered(app) -> None:
+    with app.app_context():
+        ride = Kind(name="Ride")
+        train = Kind(name="Train")
+        DB.session.add_all([ride, train])
+        DB.session.commit()
+
+        # The ride alone leaves a plus shape that does not cluster; the train
+        # supplies the fourth neighbor of the center.
+        _add_activity_tiles(1, ride, _PLUS_VISITED, dt.datetime(2026, 1, 1))
+        _add_activity_tiles(2, train, [(1, 0)], dt.datetime(2026, 1, 2))
+
+        both = get_filtered_cluster_state(14, frozenset({1, 2}))
+        ride_only = get_filtered_cluster_state(14, frozenset({1}))
+
+        assert (0, 0) in both.membership
+        assert ride_only.membership == {}
+        assert both.num_cluster_tiles > ride_only.num_cluster_tiles
+
+
+def test_filtered_tile_visits_respect_the_activity_set(app) -> None:
+    with app.app_context():
+        ride = Kind(name="Ride")
+        DB.session.add(ride)
+        DB.session.commit()
+        _add_activity_tiles(1, ride, [(0, 0)], dt.datetime(2026, 1, 1))
+        _add_activity_tiles(2, ride, [(0, 0), (1, 0)], dt.datetime(2026, 1, 2))
+
+        bounds = Bounds(0, 0, 4, 4)
+        both = get_filtered_tile_visits_in_bounds(14, bounds, frozenset({1, 2}))
+        assert both[(0, 0)]["visit_count"] == 2
+        assert both[(0, 0)]["first_id"] == 1
+
+        second = get_filtered_tile_visits_in_bounds(14, bounds, frozenset({2}))
+        assert second[(0, 0)]["visit_count"] == 1
+        assert second[(0, 0)]["first_id"] == 2
+
+
+def test_explorer_page_counters_follow_the_search_filter(app) -> None:
+    with app.app_context():
+        ride = Kind(name="Ride")
+        train = Kind(name="Train")
+        DB.session.add_all([ride, train])
+        DB.session.commit()
+        _add_activity_tiles(1, ride, _PLUS_VISITED, dt.datetime(2026, 1, 1))
+        _add_activity_tiles(2, train, [(1, 0), (2, 0)], dt.datetime(2026, 1, 2))
+        rebuild_tile_visits_from_activity_tiles()
+        compute_current_state_for_zoom(14)
+        ride_id = ride.id
+
+    client = app.test_client()
+    unfiltered = client.get("/explorer/14/server-side")
+    filtered = client.get(f"/explorer/14/server-side?kind={ride_id}")
+
+    assert unfiltered.status_code == 200
+    assert filtered.status_code == 200
+    # The centre only clusters once the train ride supplies its fourth
+    # neighbour, so filtering it away drops both counters.
+    assert "You have 6 explored tiles" in unfiltered.text
+    assert "There are 1 cluster tiles" in unfiltered.text
+    assert "You have 4 explored tiles" in filtered.text
+    assert "There are 0 cluster tiles" in filtered.text

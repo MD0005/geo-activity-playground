@@ -18,7 +18,6 @@
     <thead>
         <tr>
             <th>Name</th>
-            <th>Consider for Achievements</th>
             <th>Default Equipment</th>
             <th>Replaced By</th>
             <th>Activities</th>
@@ -29,13 +28,6 @@
         {% for kind in kinds %}
         <tr>
             <td>{{ kind.name }}</td>
-            <td>
-                {% if kind.consider_for_achievements %}
-                    <span class="badge bg-success">Yes</span>
-                {% else %}
-                    <span class="badge bg-secondary">No</span>
-                {% endif %}
-            </td>
             <td>
                 {% if kind.default_equipment %}
                     {{ kind.default_equipment.name }}

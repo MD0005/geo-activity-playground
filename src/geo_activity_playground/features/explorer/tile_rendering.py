@@ -23,7 +23,7 @@ from ...core.tile_visits import (
 from .clustering import (
     get_cluster_history_latest_event_index,
     get_cluster_membership_in_bounds,
-    get_cluster_tile_diff_for_activity,
+    get_cluster_tiles_gained_by_activity,
     get_max_cluster,
 )
 from .model import BorderStroke, TileStyle, TileStyleName, get_tile_styles
@@ -462,15 +462,15 @@ def _activity_highlight_tiles(
 ) -> tuple[frozenset[tuple[int, int]], frozenset[tuple[int, int]]]:
     """New and newly clustered tiles of one activity.
 
-    Replaying the cluster history is far too expensive to repeat for every tile
-    image of a viewport, hence the cache. The history version is part of the key
-    so that added activities invalidate stale entries.
+    Both lookups are indexed queries, but a viewport asks for many tile images
+    at once, so the cache saves the repeated round trips. The history version is
+    part of the key so that added activities invalidate stale entries.
     """
     new_tiles = frozenset(
         (tile_visit.tile_x, tile_visit.tile_y)
         for tile_visit in get_first_visits_for_activity(activity_id, zoom)
     )
-    cluster_gained, _ = get_cluster_tile_diff_for_activity(zoom, activity_id)
+    cluster_gained = get_cluster_tiles_gained_by_activity(zoom, activity_id)
     return new_tiles, frozenset(cluster_gained)
 
 
@@ -496,6 +496,7 @@ def _resolve_color_strategy(
     ty_max: int,
     historical_state: Any | None,
     config: UiConfig,
+    filtered_state: Any | None = None,
 ) -> ColorStrategy:
     color_strategy_name = request.args.get("color_strategy", "colorful_cluster")
     if color_strategy_name == "default":
@@ -503,28 +504,35 @@ def _resolve_color_strategy(
     styles = get_tile_style_specs()
     match color_strategy_name:
         case "max_cluster":
-            if historical_state is None:
-                membership = get_cluster_membership_in_bounds(
-                    zoom, tx_min, tx_max, ty_min, ty_max
-                )
-                max_cluster_id, _ = get_max_cluster(zoom)
-                return MaxClusterColorStrategy(
-                    membership, max_cluster_id, tile_visits, styles
-                )
-            else:
+            if historical_state is not None:
                 return HistoricalMaxClusterColorStrategy(historical_state, styles)
+            if filtered_state is not None:
+                return MaxClusterColorStrategy(
+                    filtered_state.membership,
+                    filtered_state.max_cluster_id,
+                    tile_visits,
+                    styles,
+                )
+            membership = get_cluster_membership_in_bounds(
+                zoom, tx_min, tx_max, ty_min, ty_max
+            )
+            max_cluster_id, _ = get_max_cluster(zoom)
+            return MaxClusterColorStrategy(
+                membership, max_cluster_id, tile_visits, styles
+            )
         case "colorful_cluster":
-            if historical_state is None:
-                membership = get_cluster_membership_in_bounds(
-                    zoom, tx_min, tx_max, ty_min, ty_max
-                )
-                return ColorfulClusterColorStrategy(
-                    membership, tile_visits, config, styles
-                )
-            else:
+            if historical_state is not None:
                 return HistoricalColorfulClusterColorStrategy(
                     historical_state, config, styles
                 )
+            membership = (
+                filtered_state.membership
+                if filtered_state is not None
+                else get_cluster_membership_in_bounds(
+                    zoom, tx_min, tx_max, ty_min, ty_max
+                )
+            )
+            return ColorfulClusterColorStrategy(membership, tile_visits, config, styles)
         case "first":
             return VisitTimeColorStrategy(tile_visits, config, styles, use_first=True)
         case "last":

@@ -11,7 +11,6 @@ def activity_meta() -> pd.DataFrame:
     """
     calories: float
     commute: bool
-    consider_for_achievements: bool
     distance_km: float
     elapsed_time: datetime.timedelta
     end_latitude: float
@@ -31,7 +30,6 @@ def activity_meta() -> pd.DataFrame:
         {
             "calories": pd.Series([None, 1000, 2000]),
             "commute": pd.Series([True, False, True]),
-            "consider_for_achievements": pd.Series([True, True, False]),
             "distance_km": pd.Series([9.8, 4.4, 4.3]),
             "elapsed_time": pd.Series(
                 [

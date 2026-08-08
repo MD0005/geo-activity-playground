@@ -28,7 +28,10 @@ export function add_layers_to_map(map, config) {
         squarePlanner = null,
         heatmapExtraArgs = null,
         historyEventIndex = null,
-        activityId = null
+        activityId = null,
+        // Search primitives as a query string. Explorer tiles are then derived
+        // for the matching activities only, instead of the stored state.
+        searchQuery = null
     } = config;
 
     // Get map container ID for localStorage key
@@ -132,11 +135,12 @@ export function add_layers_to_map(map, config) {
             : L.layerGroup(),
     };
 
+    const searchParam = searchQuery ? `&${searchQuery}` : '';
     for (const z of zoomLevels) {
         for (const { name, strategy, history, activity } of explorerStrategies) {
             const extra = (history ? historyParam : '') + (activity ? activityParam : '');
             overlay_maps[labelFor(name, z)] = L.tileLayer(
-                `/explorer/${z}/tile/{z}/{x}/{y}.png?color_strategy=${strategy}${extra}`,
+                `/explorer/${z}/tile/{z}/{x}/{y}.png?color_strategy=${strategy}${extra}${searchParam}`,
                 { maxZoom: 19, attribution }
             );
         }

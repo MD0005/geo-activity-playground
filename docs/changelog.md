@@ -19,15 +19,21 @@ Types of changes
 
 Added:
 
+- Explorer tiles now respect the activity filter. ([GH-480](https://github.com/martin-ueding/geo-activity-playground/issues/480))
+  - A settings page to choose which activity kinds count toward explorer tiles, replacing the per-kind “consider for achievements” switch. Changing it no longer requires re-importing anything.
+- Inaccessible tiles can optionally count toward cluster and square.. ([GH-481](https://github.com/martin-ueding/geo-activity-playground/issues/481))
 - The rendering of explorer tiles can now be fully customized. For each kind of special tile (e.g. visited, missing, new in this activity), you can set a fill color, border color, border style and stripe color. ([GH-366](https://github.com/martin-ueding/geo-activity-playground/issues/366))
 - Expose the selection of explorer zoom levels other than 14 and 17. ([GH-483](https://github.com/martin-ueding/geo-activity-playground/issues/483))
 
 Changed:
 
+- The cluster and square evolution plots load after the rest of the Explorer Tiles page, so the page itself is no longer held up by them.
 - Enable “Mapterhorn Hillshade” overlay by default. ([GH-489](https://github.com/martin-ueding/geo-activity-playground/issues/489))
 
 Fixed:
 
+- Activities of a kind that does not count for explorer tiles could still become the recorded first or last visitor of a tile when an activity's start time changed. Car and train rides no longer leak into the tile visit metadata that way.
+- The cluster size evolution plot includes the moment the first cluster tile appeared, which was previously omitted. ([GH-481](https://github.com/martin-ueding/geo-activity-playground/issues/481))
 - Marking a tile as inaccessible updates the “Inaccessible Tiles” layer right away. ([GH-478](https://github.com/martin-ueding/geo-activity-playground/issues/478))
 - The “Mapterhorn Hillshade” overlay is upscaled above zoom level 17 instead of vanishing. ([GH-475](https://github.com/martin-ueding/geo-activity-playground/issues/475))
 

@@ -4,6 +4,12 @@
 
 <h1>{{ _('Explorer Tiles') }}</h1>
 
+{% if not zoom_level_not_generated %}
+<div class="mb-3">
+    {% include "search_form.html.j2" %}
+</div>
+{% endif %}
+
 {% if zoom_level_not_generated %}
 <p>{{ _('You try to access explorer tiles for a level that hasn\'t been generated before. That is not a problem, we just don\'t generate all levels to save a bit of time. If you want to have it, just enable it!') }}</p>
 
@@ -71,7 +77,8 @@
                 zoom: {{ zoom }},
                 zoomLevels: {{ explorer_zoom_levels | tojson }},
                 attribution: '{{ map_tile_attribution|safe }}',
-                bbox: {{ center.bbox | safe }}
+                bbox: {{ center.bbox | safe }},
+                searchQuery: '{{ extra_args|safe }}' || null
             });
         </script>
     </div>
@@ -112,23 +119,25 @@
 
 <h2 class="mb-3">{{ _('Tile history') }}</h2>
 
+{% if search_active %}
+<p class="text-body-secondary">{{ _('The tile history is recorded for your configured explorer activities and does not follow the filter above, so these plots are hidden while a filter is active.') }}</p>
+{% else %}
+{% if history_stale %}
+<p class="text-body-secondary">{{ _('The tile history has changed since these plots were last computed. They are being brought up to date, which can take a moment.') }}</p>
+{% endif %}
+
 <div class="row mb-3">
     <div class="col-md-4">
-        {% if plot_tile_evolution|length > 0 %}
-        {{ vega_direct(plot_tile_evolution) }}
-        {% endif %}
+        {{ fetched_vega(url_for('.evolution_plot', zoom=zoom, plot='tiles')) }}
     </div>
     <div class="col-md-4">
-        {% if plot_cluster_evolution|length > 0 %}
-        {{ vega_direct(plot_cluster_evolution) }}
-        {% endif %}
+        {{ fetched_vega(url_for('.evolution_plot', zoom=zoom, plot='cluster')) }}
     </div>
     <div class="col-md-4">
-        {% if plot_square_evolution|length > 0 %}
-        {{ vega_direct(plot_square_evolution) }}
-        {% endif %}
+        {{ fetched_vega(url_for('.evolution_plot', zoom=zoom, plot='square')) }}
     </div>
 </div>
+{% endif %}
 
 <h2 class="mb-3">{{ _('Tile coloring') }}</h2>
 <p><a href="{{ url_for('settings.tile_rendering') }}">{{ _('Modify tile rendering') }}</a>.</p>

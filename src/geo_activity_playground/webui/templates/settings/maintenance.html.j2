@@ -24,6 +24,23 @@
     </div>
 </div>
 
+<div class="card border-secondary mb-3">
+    <div class="card-header bg-secondary text-white">
+        <h5 class="card-title mb-0">{{ _('Explorer Tile History') }}</h5>
+    </div>
+    <div class="card-body">
+        <p class="card-text">
+            {{ _('The cluster and square evolution plots and the “new cluster tiles” of each activity come from replaying your tile history. That replay is only redone when something invalidates it, and normally happens by itself when a page needs it. Use this to force it right away.') }}
+        </p>
+        <form method="POST">
+            <input type="hidden" name="action" value="rebuild_cluster_history">
+            <button type="submit" class="btn btn-secondary">
+                {{ _('Recompute tile history') }}
+            </button>
+        </form>
+    </div>
+</div>
+
 <div class="card border-warning mb-3">
     <div class="card-header bg-warning text-dark">
         <h5 class="card-title mb-0">{{ _('Re-enrich All Activities') }}</h5>

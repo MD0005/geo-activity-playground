@@ -44,21 +44,52 @@ class ClusterHistoryEvent(DB.Model):
     )
 
 
-class ClusterHistoryCheckpoint(DB.Model):
-    __tablename__ = "cluster_history_checkpoints"
+class ClusterTileActivation(DB.Model):
+    """When each tile became a cluster tile, one row per cluster tile.
+
+    Cluster membership only ever grows, so the set of cluster tiles at any
+    point in the history is simply the rows up to that ``event_index``. This
+    answers "what did this activity add to my cluster" and the calendar
+    activation counts without replaying the history.
+    """
+
+    __tablename__ = "cluster_tile_activations"
 
     id: Mapped[int] = mapped_column(primary_key=True)
     zoom: Mapped[int] = mapped_column(sa.Integer, nullable=False)
+    tile_x: Mapped[int] = mapped_column(sa.Integer, nullable=False)
+    tile_y: Mapped[int] = mapped_column(sa.Integer, nullable=False)
     event_index: Mapped[int] = mapped_column(sa.Integer, nullable=False)
+    activity_id: Mapped[int | None] = mapped_column(
+        ForeignKey("activities.id", name="cluster_tile_activation_activity_id"),
+        nullable=True,
+        index=True,
+    )
+    "``None`` for tiles that clustered at the origin of time, without a ride."
     time: Mapped[datetime.datetime | None] = mapped_column(sa.DateTime, nullable=True)
-    max_cluster_size: Mapped[int] = mapped_column(sa.Integer, nullable=False, default=0)
-    payload_json: Mapped[str] = mapped_column(sa.Text, nullable=False, default="{}")
 
     __table_args__ = (
-        sa.Index("idx_cluster_history_checkpoints_zoom_index", "zoom", "event_index"),
+        sa.Index("idx_cluster_tile_activations_zoom_event", "zoom", "event_index"),
+        sa.Index("idx_cluster_tile_activations_zoom_activity", "zoom", "activity_id"),
         sa.UniqueConstraint(
-            "zoom", "event_index", name="uq_cluster_history_checkpoints"
+            "zoom", "tile_x", "tile_y", name="uq_cluster_tile_activation_per_zoom"
         ),
+    )
+
+
+class ClusterHistoryStatus(DB.Model):
+    """Whether the stored history of a zoom level still matches the inputs.
+
+    The history is expensive to replay, so changes that invalidate it only set
+    this flag; the replay happens when a page actually needs the history.
+    """
+
+    __tablename__ = "cluster_history_status"
+
+    zoom: Mapped[int] = mapped_column(sa.Integer, primary_key=True)
+    stale: Mapped[bool] = mapped_column(sa.Boolean, nullable=False, default=True)
+    computed_at: Mapped[datetime.datetime | None] = mapped_column(
+        sa.DateTime, nullable=True
     )
 
 

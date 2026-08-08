@@ -18,6 +18,7 @@ from ...core.datamodel import DB, Activity, TileVisit
 from ..explorer.clustering import (
     get_cluster_tile_activations_df,
     get_square_history_df,
+    rebuild_cluster_history_if_stale,
 )
 
 
@@ -112,6 +113,7 @@ def _tile_first_visits(zoom: int) -> pd.DataFrame:
 
 
 def _cluster_tile_activations(zoom: int) -> pd.DataFrame:
+    rebuild_cluster_history_if_stale(zoom)
     frame = get_cluster_tile_activations_df(zoom)
     if len(frame) == 0:
         frame["year"] = pd.Series(dtype="int64")
@@ -161,6 +163,7 @@ def _cluster_tile_activations(zoom: int) -> pd.DataFrame:
 
 
 def _square_evolution_frame(zoom: int) -> pd.DataFrame:
+    rebuild_cluster_history_if_stale(zoom)
     frame = get_square_history_df(zoom)
     if len(frame) == 0:
         frame["year"] = pd.Series(dtype="int64")

@@ -12,7 +12,6 @@ import sqlalchemy
 from geo_activity_playground.core.datamodel import (
     DB,
     Activity,
-    Kind,
     query_activity_meta,
 )
 
@@ -45,12 +44,10 @@ class ActivityRepository:
         else:
             return None
 
-    def get_activity_ids(self, only_achievements: bool = False) -> Sequence[int]:
-        query = sqlalchemy.select(Activity.id)
-        if only_achievements:
-            query = query.where(Kind.consider_for_achievements)
-        result = DB.session.scalars(query.order_by(Activity.start, Activity.id)).all()
-        return result
+    def get_activity_ids(self) -> Sequence[int]:
+        return DB.session.scalars(
+            sqlalchemy.select(Activity.id).order_by(Activity.start, Activity.id)
+        ).all()
 
     def iter_activities(self, new_to_old=True, drop_na=False) -> Sequence[Activity]:
         query = sqlalchemy.select(Activity)

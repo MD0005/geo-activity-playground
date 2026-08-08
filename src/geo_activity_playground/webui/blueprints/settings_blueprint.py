@@ -42,19 +42,23 @@ from ...core.tag_extraction import apply_tag_extraction, get_tags_with_extractio
 from ...core.tile_visits import (
     _reset_tile_visits_db,
     compute_tile_visits_new,
+    rebuild_tile_visits_from_activity_tiles,
 )
 from ...features.activity_photos.model import Photo
 from ...features.directory_import.blueprint import register_directory_import_settings
 from ...features.explorer.clustering import (
+    compute_current_state_for_zoom,
     compute_tile_evolution,
     delete_tile_evolution,
+    mark_cluster_history_stale,
+    rebuild_cluster_history,
 )
 from ...features.explorer.model import (
     TILE_STYLE_DEFAULTS,
     BorderStroke,
-    ClusterHistoryCheckpoint,
     ClusterHistoryEvent,
     ClusterMembership,
+    ClusterTileActivation,
     ExplorerTileBookmark,
     TileStyleName,
     get_tile_styles,
@@ -213,7 +217,7 @@ def _truncate_user_content_tables() -> None:
     DB.session.execute(sqlalchemy.delete(ActivityTile))
     DB.session.execute(sqlalchemy.delete(TileVisit))
     DB.session.execute(sqlalchemy.delete(ClusterHistoryEvent))
-    DB.session.execute(sqlalchemy.delete(ClusterHistoryCheckpoint))
+    DB.session.execute(sqlalchemy.delete(ClusterTileActivation))
     DB.session.execute(sqlalchemy.delete(ClusterMembership))
     DB.session.execute(sqlalchemy.delete(Photo))
     DB.session.execute(sqlalchemy.delete(Activity))
@@ -316,6 +320,15 @@ def make_settings_blueprint(
                 compute_tile_evolution(config_accessor.ui())
                 flasher.flash_message(
                     _("Tile visit state has been reset and re-indexed."),
+                    FlashTypes.SUCCESS,
+                )
+            elif action == "rebuild_cluster_history":
+                logger.info("User requested rebuild of the cluster history.")
+                for zoom in config_accessor.ui().explorer_zoom_levels:
+                    compute_current_state_for_zoom(zoom)
+                    rebuild_cluster_history(zoom)
+                flasher.flash_message(
+                    _("The explorer tile history has been recomputed."),
                     FlashTypes.SUCCESS,
                 )
             elif action == "reenrich_all_activities":
@@ -611,9 +624,6 @@ def make_settings_blueprint(
                 flasher.flash_message("Kind name is required.", FlashTypes.DANGER)
                 return redirect(url_for(".kinds_new"))
 
-            consider_for_achievements = (
-                request.form.get("consider_for_achievements") == "on"
-            )
             default_equipment_id = request.form.get("default_equipment_id")
             default_equipment_id = (
                 int(default_equipment_id) if default_equipment_id else None
@@ -621,7 +631,7 @@ def make_settings_blueprint(
             replaced_by_id = request.form.get("replaced_by_id")
             replaced_by_id = int(replaced_by_id) if replaced_by_id else None
 
-            kind = Kind(name=name, consider_for_achievements=consider_for_achievements)
+            kind = Kind(name=name)
             if default_equipment_id:
                 kind.default_equipment_id = default_equipment_id
             if replaced_by_id:
@@ -653,9 +663,6 @@ def make_settings_blueprint(
                 flasher.flash_message("Kind name is required.", FlashTypes.DANGER)
                 return redirect(url_for(".kinds_edit", id=id))
 
-            consider_for_achievements = (
-                request.form.get("consider_for_achievements") == "on"
-            )
             default_equipment_id = request.form.get("default_equipment_id")
             default_equipment_id = (
                 int(default_equipment_id) if default_equipment_id else None
@@ -674,7 +681,6 @@ def make_settings_blueprint(
 
             # Update kind
             kind.name = name
-            kind.consider_for_achievements = consider_for_achievements
             kind.default_equipment_id = default_equipment_id
             old_replaced_by_id = kind.replaced_by_id
             kind.replaced_by_id = replaced_by_id
@@ -850,6 +856,56 @@ def make_settings_blueprint(
                     set(SELECTABLE_EXPLORER_ZOOM_LEVELS)
                     | set(ui_config.explorer_zoom_levels)
                 )
+            ],
+        )
+
+    @blueprint.route("/explorer-filter", methods=["POST"])
+    @needs_authentication(authenticator)
+    def explorer_filter():
+        ui_config = config_accessor.ui()
+        selected = sorted(
+            int(value) for value in request.form.getlist("kind") if value.isdigit()
+        )
+        primitives = {"kind": selected} if selected else {}
+        if primitives != json.loads(ui_config.explorer_filter_json):
+            ui_config.explorer_filter_json = json.dumps(primitives, sort_keys=True)
+            config_accessor.save()
+            rebuild_tile_visits_from_activity_tiles()
+            for zoom in ui_config.explorer_zoom_levels:
+                compute_current_state_for_zoom(zoom)
+            mark_cluster_history_stale(ui_config.explorer_zoom_levels)
+        flasher.flash_message(
+            _("Updated the activities counting for explorer tiles."),
+            FlashTypes.SUCCESS,
+        )
+        return redirect(url_for(".explorer_tiles"))
+
+    @blueprint.route("/explorer-tiles", methods=["GET", "POST"])
+    @needs_authentication(authenticator)
+    def explorer_tiles():
+        ui_config = config_accessor.ui()
+        if request.method == "POST":
+            wanted = request.form.get("count_inaccessible_in_cluster") == "on"
+            if wanted != ui_config.count_inaccessible_in_cluster:
+                ui_config.count_inaccessible_in_cluster = wanted
+                config_accessor.save()
+                # Cluster and square change immediately; the history is only
+                # flagged, because replaying it is expensive.
+                for zoom in ui_config.explorer_zoom_levels:
+                    compute_current_state_for_zoom(zoom)
+                mark_cluster_history_stale(ui_config.explorer_zoom_levels)
+            flasher.flash_message(
+                _("Updated explorer tile settings."), FlashTypes.SUCCESS
+            )
+        selected_kinds = set(json.loads(ui_config.explorer_filter_json).get("kind", []))
+        return render_template(
+            "settings/explorer-tiles.html.j2",
+            count_inaccessible_in_cluster=ui_config.count_inaccessible_in_cluster,
+            kinds=[
+                (kind.id, kind.name, kind.id in selected_kinds)
+                for kind in DB.session.scalars(
+                    sqlalchemy.select(Kind).order_by(Kind.name)
+                ).all()
             ],
         )
 

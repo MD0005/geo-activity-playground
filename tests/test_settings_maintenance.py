@@ -21,8 +21,8 @@ from geo_activity_playground.core.datamodel import (
 )
 from geo_activity_playground.features.activity_photos.model import Photo
 from geo_activity_playground.features.explorer.model import (
-    ClusterHistoryCheckpoint,
     ClusterHistoryEvent,
+    ClusterTileActivation,
     ExplorerTileBookmark,
 )
 from geo_activity_playground.features.heatmap.model import HeatmapTileCache
@@ -38,9 +38,7 @@ from geo_activity_playground.features.square_planner.model import SquarePlannerB
 def test_wipe_local_state_truncates_user_tables_and_files(client, app, tmp_path):
     with app.app_context():
         equipment = Equipment(name="Road Bike")
-        kind = Kind(
-            name="Ride", consider_for_achievements=True, default_equipment=equipment
-        )
+        kind = Kind(name="Ride", default_equipment=equipment)
         activity = Activity(
             name="Morning Ride",
             equipment=equipment,
@@ -172,7 +170,7 @@ def test_wipe_local_state_truncates_user_tables_and_files(client, app, tmp_path)
             Photo,
             TileVisit,
             ClusterHistoryEvent,
-            ClusterHistoryCheckpoint,
+            ClusterTileActivation,
             Segment,
             SegmentMatch,
             SegmentCheck,
@@ -296,9 +294,7 @@ def test_refresh_strava_activity_names_updates_matching_records(
 ):
     with app.app_context():
         equipment = Equipment(name="Road Bike")
-        kind = Kind(
-            name="Ride", consider_for_achievements=True, default_equipment=equipment
-        )
+        kind = Kind(name="Ride", default_equipment=equipment)
         activity = Activity(
             name="Morning Ride",
             equipment=equipment,
@@ -339,9 +335,7 @@ def test_refresh_strava_activity_names_updates_matching_records(
 def test_refresh_strava_activity_names_is_noop_if_names_match(client, app, monkeypatch):
     with app.app_context():
         equipment = Equipment(name="Road Bike")
-        kind = Kind(
-            name="Ride", consider_for_achievements=True, default_equipment=equipment
-        )
+        kind = Kind(name="Ride", default_equipment=equipment)
         activity = Activity(
             name="Already Synced",
             equipment=equipment,

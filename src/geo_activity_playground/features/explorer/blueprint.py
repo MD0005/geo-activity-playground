@@ -38,6 +38,15 @@ from ...core.grid import (
     make_grid_file_osm,
     make_grid_points,
 )
+from ...core.meta_search import (
+    activity_ids_for_search,
+    get_stored_queries,
+    is_search_active,
+    parse_search_params,
+    primitives_to_jinja,
+    primitives_to_url_str,
+    register_search_query,
+)
 from ...core.raster_map import ImageTransform, TileGetter
 from ...core.tile_visits import (
     get_activity_ids_in_bounds,
@@ -49,6 +58,7 @@ from ...core.tile_visits import (
 from ...core.tiles import compute_tile, get_tile_upper_left_lat_lon
 from ...webui.authenticator import Authenticator, needs_authentication
 from .clustering import (
+    compute_current_state_for_zoom,
     compute_tile_evolution,
     get_biggest_cluster_members,
     get_cluster_history_latest_event_index,
@@ -57,11 +67,19 @@ from .clustering import (
     get_cluster_size_history_df,
     get_cluster_state_at_cutoff,
     get_cluster_tile_count,
-    get_cluster_tile_diff_for_activity,
     get_cluster_tiles_at_cutoff,
+    get_cluster_tiles_gained_by_activity,
     get_explorer_square,
     get_max_cluster,
     get_square_history_df,
+    is_cluster_history_stale,
+    mark_cluster_history_stale,
+    rebuild_cluster_history_if_stale,
+)
+from .filtered import (
+    get_filtered_cluster_state,
+    get_filtered_tile_visits_in_bounds,
+    get_filtered_visited_tiles,
 )
 from .garmin_img import build_garmin_img, mkgmap_available
 from .inaccessible import get_inaccessible_tiles
@@ -304,15 +322,37 @@ def make_explorer_blueprint(
         if zoom not in config_accessor.ui().explorer_zoom_levels:
             return {"zoom_level_not_generated": zoom}
 
-        square_x, square_y, square_size = get_explorer_square(zoom)
+        primitives = parse_search_params(request.args)
+        search_active = is_search_active(primitives)
+        if search_active and authenticator.is_authenticated():
+            register_search_query(primitives)
 
         # Get data from database
         medians = get_tile_medians(zoom)
         median_lat, median_lon = get_tile_upper_left_lat_lon(
             medians[0], medians[1], zoom
         )
-        num_tiles = get_tile_count(zoom)
-        tile_history = get_tile_history_df(zoom)
+
+        if search_active:
+            activity_ids = frozenset(activity_ids_for_search(primitives) or ())
+            filtered = get_filtered_cluster_state(zoom, activity_ids)
+            square_x = filtered.square_x
+            square_y = filtered.square_y
+            square_size = filtered.max_square_size
+            num_tiles = len(get_filtered_visited_tiles(zoom, activity_ids))
+            num_cluster_tiles = filtered.num_cluster_tiles
+            max_cluster_size = filtered.max_cluster_size
+            biggest_cluster_members = [
+                tile
+                for tile, root in filtered.membership.items()
+                if root == filtered.max_cluster_id
+            ]
+        else:
+            square_x, square_y, square_size = get_explorer_square(zoom)
+            num_tiles = get_tile_count(zoom)
+            num_cluster_tiles = get_cluster_tile_count(zoom)
+            _representative, max_cluster_size = get_max_cluster(zoom)
+            biggest_cluster_members = get_biggest_cluster_members(zoom)
 
         bookmarks: list[dict[str, Any]] = []
         for bookmark in DB.session.scalars(
@@ -336,9 +376,7 @@ def make_explorer_blueprint(
                 }
             )
 
-        biggest_cluster_members = get_biggest_cluster_members(zoom)
-        _max_cluster_representative, max_cluster_size = get_max_cluster(zoom)
-
+        stored_queries = get_stored_queries()
         context = {
             "center": {
                 "latitude": median_lat,
@@ -351,14 +389,19 @@ def make_explorer_blueprint(
                     else {}
                 ),
             },
-            "plot_tile_evolution": plot_tile_evolution(tile_history),
-            "plot_cluster_evolution": plot_cluster_evolution(
-                get_cluster_size_history_df(zoom)
-            ),
-            "plot_square_evolution": plot_square_evolution(get_square_history_df(zoom)),
+            "history_stale": is_cluster_history_stale(zoom),
+            "search_active": search_active,
+            "extra_args": primitives_to_url_str(primitives),
+            "query": primitives_to_jinja(primitives),
+            "search_query_favorites": [
+                (str(q), q.to_url_str()) for q in stored_queries if q.is_favorite
+            ],
+            "search_query_last": [
+                (str(q), q.to_url_str()) for q in stored_queries if not q.is_favorite
+            ],
             "zoom": zoom,
             "num_tiles": num_tiles,
-            "num_cluster_tiles": get_cluster_tile_count(zoom),
+            "num_cluster_tiles": num_cluster_tiles,
             "square_x": square_x,
             "square_y": square_y,
             "square_size": square_size,
@@ -368,6 +411,25 @@ def make_explorer_blueprint(
             "zoom_level_not_generated": None,
         }
         return render_template("explorer/server-side.html.j2", **context)
+
+    @blueprint.route("/<int:zoom>/evolution/<plot>.json")
+    def evolution_plot(zoom: int, plot: str) -> ResponseReturnValue:
+        """One evolution plot, replaying the history first if it is outdated.
+
+        The explorer page fetches these after rendering so that a rebuild does
+        not hold up the page itself.
+        """
+        if plot not in ("tiles", "cluster", "square"):
+            abort(404)
+        rebuild_cluster_history_if_stale(zoom)
+        match plot:
+            case "tiles":
+                spec = plot_tile_evolution(get_tile_history_df(zoom))
+            case "cluster":
+                spec = plot_cluster_evolution(get_cluster_size_history_df(zoom))
+            case "square":
+                spec = plot_square_evolution(get_square_history_df(zoom))
+        return {"spec": json.loads(spec) if spec else None}
 
     @blueprint.after_request
     def add_cors_headers(response: Response) -> Response:
@@ -415,27 +477,51 @@ def make_explorer_blueprint(
     @blueprint.route("/<int:zoom>/tile/<int:z>/<int:x>/<int:y>.png")
     def tile(zoom: int, z: int, x: int, y: int) -> ResponseReturnValue:
         config = config_accessor.ui()
-        square_x, square_y, square_size = get_explorer_square(zoom)
+        tile_bounds = _tile_bounds(zoom, z, x, y)
+
+        # An active search restricts which activities count, so tile visits,
+        # clusters and the square all have to be derived for that filter
+        # instead of read from the stored state.
+        primitives = parse_search_params(request.args)
+        filtered_activity_ids = (
+            frozenset(activity_ids_for_search(primitives) or ())
+            if is_search_active(primitives)
+            else None
+        )
+        filtered_state = None
+
+        if filtered_activity_ids is None:
+            square_x, square_y, square_size = get_explorer_square(zoom)
+            tile_visits = get_tile_visits_in_bounds(
+                zoom,
+                tile_bounds.x_min,
+                tile_bounds.x_max,
+                tile_bounds.y_min,
+                tile_bounds.y_max,
+            )
+        else:
+            filtered_state = get_filtered_cluster_state(zoom, filtered_activity_ids)
+            square_x = filtered_state.square_x
+            square_y = filtered_state.square_y
+            square_size = filtered_state.max_square_size
+            tile_visits = get_filtered_tile_visits_in_bounds(
+                zoom, tile_bounds, filtered_activity_ids
+            )
+
         evolution_state = SimpleNamespace(
             square_x=square_x, square_y=square_y, max_square_size=square_size
         )
+
+        # The history describes the unfiltered set only, so the time slider and
+        # a search filter are mutually exclusive.
         history_event_index = request.args.get("event_index", type=int)
         historical_state = None
-        if history_event_index is not None:
+        if history_event_index is not None and filtered_activity_ids is None:
             history_event_index = max(
                 0,
                 min(history_event_index, get_cluster_history_latest_event_index(zoom)),
             )
             historical_state = get_cluster_state_at_cutoff(zoom, history_event_index)
-
-        tile_bounds = _tile_bounds(zoom, z, x, y)
-        tile_visits = get_tile_visits_in_bounds(
-            zoom,
-            tile_bounds.x_min,
-            tile_bounds.x_max,
-            tile_bounds.y_min,
-            tile_bounds.y_max,
-        )
 
         color_strategy = _resolve_color_strategy(
             request,
@@ -447,6 +533,7 @@ def make_explorer_blueprint(
             tile_bounds.y_max,
             historical_state,
             config,
+            filtered_state,
         )
 
         result = _render_tile_image(zoom, z, x, y, color_strategy, evolution_state)
@@ -644,7 +731,7 @@ def make_explorer_blueprint(
     def cluster_history_activity_diff(
         zoom: int, activity_id: int
     ) -> ResponseReturnValue:
-        added, removed = get_cluster_tile_diff_for_activity(zoom, activity_id)
+        added = get_cluster_tiles_gained_by_activity(zoom, activity_id)
         features = [
             make_explorer_tile(
                 tile_x=tile_x,
@@ -653,14 +740,6 @@ def make_explorer_blueprint(
                 zoom=zoom,
             )
             for tile_x, tile_y in sorted(added)
-        ] + [
-            make_explorer_tile(
-                tile_x=tile_x,
-                tile_y=tile_y,
-                properties={"delta": "removed"},
-                zoom=zoom,
-            )
-            for tile_x, tile_y in sorted(removed)
         ]
         return Response(
             geojson.dumps(geojson.FeatureCollection(features)),
@@ -693,6 +772,7 @@ def make_explorer_blueprint(
                 InaccessibleTile(zoom=zoom, tile_x=tile_x, tile_y=tile_y)  # pyright: ignore
             )
             DB.session.commit()
+            _refresh_after_inaccessible_change(zoom)
             flash(_("Tile marked as inaccessible."), category="success")
         return redirect(url_for(".server_side", zoom=zoom))
 
@@ -707,12 +787,26 @@ def make_explorer_blueprint(
         if existing is not None:
             DB.session.delete(existing)
             DB.session.commit()
+            _refresh_after_inaccessible_change(zoom)
             flash(_("Tile unmarked as inaccessible."), category="success")
         else:
             flash(_("Tile was not marked as inaccessible."), category="warning")
         return redirect(url_for(".server_side", zoom=zoom))
 
     return blueprint
+
+
+def _refresh_after_inaccessible_change(zoom: int) -> None:
+    """React to a changed inaccessible tile set.
+
+    The current cluster and square are cheap to recompute, so that happens
+    right away. The history is not, so it is only flagged and replayed when a
+    page asks for it.
+    """
+    if not ConfigAccessor().ui().count_inaccessible_in_cluster:
+        return
+    compute_current_state_for_zoom(zoom)
+    mark_cluster_history_stale([zoom])
 
 
 def plot_tile_evolution(tiles: pd.DataFrame) -> str:

@@ -43,7 +43,6 @@ class ActivityMeta(TypedDict):
     average_speed_moving_kmh: float
     calories: float
     commute: bool
-    consider_for_achievements: bool
     copernicus_elevation_gain: float
     distance_km: float
     elapsed_time: datetime.timedelta
@@ -293,7 +292,6 @@ def query_activity_meta(clauses: list | None = None) -> pd.DataFrame:
             Activity.steps,
             Activity.num_new_tiles_14,
             Activity.num_new_tiles_17,
-            Kind.consider_for_achievements,
             Equipment.name.label("equipment"),
             Kind.name.label("kind"),
         )
@@ -417,9 +415,6 @@ class Kind(DB.Model):
     id: Mapped[int] = mapped_column(primary_key=True)
 
     name: Mapped[str] = mapped_column(String)
-    consider_for_achievements: Mapped[bool] = mapped_column(
-        sa.Boolean, default=True, nullable=False
-    )
 
     activities: Mapped[list["Activity"]] = relationship(
         back_populates="kind", cascade="all, delete-orphan"
@@ -449,10 +444,7 @@ def get_or_make_kind(name: str) -> Kind:
         kind = kinds[0]
         return kind.replaced_by or kind
     else:
-        kind = Kind(
-            name=name,
-            consider_for_achievements=True,
-        )
+        kind = Kind(name=name)
         return kind
 
 
@@ -510,9 +502,9 @@ class TileVisit(DB.Model):
 class ActivityTile(DB.Model):
     """Which activities pass through which tile, per zoom level.
 
-    Replaces the in-memory ``activities_per_tile`` structure. Queried by
-    viewport/tile for the heatmap, the "activities through tile" view, and
-    segment matching.
+    This is the unfiltered record of every activity, which makes it the source
+    the tile visit aggregate is derived from. Also queried by viewport/tile for
+    the heatmap, the "activities through tile" view, and segment matching.
     """
 
     __tablename__ = "activity_tile"
@@ -526,9 +518,16 @@ class ActivityTile(DB.Model):
         nullable=False,
         index=True,
     )
+    time: Mapped[datetime.datetime | None] = mapped_column(sa.DateTime, nullable=True)
+    """When the activity entered this tile.
+
+    ``None`` for rows written before this was recorded; the activity start time
+    is used instead, which is coarser when two rides overlap in time.
+    """
 
     __table_args__ = (
         sa.Index("idx_activity_tile_zoom_tile", "zoom", "tile_x", "tile_y"),
+        sa.Index("idx_activity_tile_zoom_activity", "zoom", "activity_id"),
     )
 
 
@@ -692,6 +691,18 @@ class UiConfig(DB.Model):
     explorer_zoom_levels: Mapped[list[int]] = mapped_column(
         MutableList.as_mutable(sa.JSON), nullable=False, default=lambda: [14, 17]
     )
+    count_inaccessible_in_cluster: Mapped[bool] = mapped_column(
+        sa.Boolean, nullable=False, default=False, server_default=sa.false()
+    )
+    explorer_filter_json: Mapped[str] = mapped_column(
+        sa.Text, nullable=False, default="{}", server_default="{}"
+    )
+    """Search primitives deciding which activities count for explorer tiles.
+
+    An empty object counts every activity. This replaces the former
+    ``Kind.consider_for_achievements`` flag, which had to be applied while
+    building the tile visits and could therefore not be varied afterwards.
+    """
     show_progress_markers: Mapped[bool] = mapped_column(
         sa.Boolean, nullable=False, default=True
     )

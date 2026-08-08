@@ -1,5 +1,6 @@
 import collections
 import datetime
+import json
 import logging
 import zoneinfo
 from collections.abc import Iterator
@@ -87,6 +88,16 @@ def get_tile_history_df(zoom: int) -> pd.DataFrame:
             "tile_y": [v.tile_y for v in visits],
         }
     )
+
+
+def get_visited_tiles(zoom: int) -> set[tuple[int, int]]:
+    """All visited tiles of a zoom level, without any timing information."""
+    return {
+        (row.tile_x, row.tile_y)
+        for row in DB.session.execute(
+            sa.select(TileVisit.tile_x, TileVisit.tile_y).where(TileVisit.zoom == zoom)
+        )
+    }
 
 
 def get_tile_count(zoom: int) -> int:
@@ -212,6 +223,9 @@ def refresh_tile_visits_for_activity(activity_id: int) -> None:
     shifted.
     """
     affected_zooms: set[int] = set()
+    # Activities that do not count for explorer tiles must not become the first
+    # or last visitor of a tile.
+    explorer_ids = get_explorer_activity_ids()
 
     zooms = [
         row[0]
@@ -249,6 +263,8 @@ def refresh_tile_visits_for_activity(activity_id: int) -> None:
                     sa.tuple_(ActivityTile.tile_x, ActivityTile.tile_y).in_(chunk),
                 )
             ):
+                if explorer_ids is not None and row.activity_id not in explorer_ids:
+                    continue
                 visiting_by_tile[(row.tile_x, row.tile_y)].add(row.activity_id)
 
             relevant_activity_ids: set[int] = set()
@@ -310,15 +326,29 @@ def refresh_tile_visits_for_activity(activity_id: int) -> None:
 
         DB.session.commit()
 
-    from ..features.explorer.clustering import rebuild_cluster_history_for_zoom
+    from ..features.explorer.clustering import (
+        compute_current_state_for_zoom,
+        rebuild_cluster_history_for_zoom,
+    )
 
     for zoom in affected_zooms:
+        compute_current_state_for_zoom(zoom)
         rebuild_cluster_history_for_zoom(zoom, get_tile_history_df(zoom))
 
 
 def _processed_activity_ids() -> set[int]:
     """Activity ids that already have tile membership in the database."""
     return {row[0] for row in DB.session.query(ActivityTile.activity_id).distinct()}
+
+
+def get_explorer_activity_ids() -> set[int] | None:
+    """Activities counting toward explorer tiles, or ``None`` for all of them."""
+    from .config import ConfigAccessor
+    from .meta_search import activity_ids_for_search
+
+    return activity_ids_for_search(
+        json.loads(ConfigAccessor().ui().explorer_filter_json)
+    )
 
 
 def compute_tile_visits_new(repository: ActivityRepository) -> None:
@@ -332,11 +362,76 @@ def compute_tile_visits_new(repository: ActivityRepository) -> None:
         for activity_id in repository.get_activity_ids()
         if activity_id not in processed_ids
     ]
+    explorer_ids = get_explorer_activity_ids()
     for activity_id in tqdm(unprocessed_ids, desc="Tile visits", delay=1):
-        _process_activity(repository, activity_id)
+        _process_activity(
+            repository,
+            activity_id,
+            counts_for_explorer=explorer_ids is None or activity_id in explorer_ids,
+        )
 
 
-def _process_activity(repository: ActivityRepository, activity_id: int) -> None:
+def rebuild_tile_visits_from_activity_tiles() -> None:
+    """Rebuild the tile visit aggregate for the current explorer filter.
+
+    ``ActivityTile`` holds every activity unconditionally, so this only has to
+    re-aggregate what is already stored; the time series are not touched.
+    """
+    explorer_ids = get_explorer_activity_ids()
+    starts = {
+        row.id: row.start
+        for row in DB.session.execute(sa.select(Activity.id, Activity.start))
+    }
+
+    DB.session.query(TileVisit).delete()
+    DB.session.commit()
+
+    aggregate: dict[tuple[int, int, int], dict] = {}
+    for row in DB.session.execute(
+        sa.select(
+            ActivityTile.zoom,
+            ActivityTile.tile_x,
+            ActivityTile.tile_y,
+            ActivityTile.activity_id,
+            ActivityTile.time,
+        )
+    ):
+        if explorer_ids is not None and row.activity_id not in explorer_ids:
+            continue
+        start = row.time if row.time is not None else starts.get(row.activity_id)
+        key = (row.zoom, row.tile_x, row.tile_y)
+        entry = aggregate.get(key)
+        if entry is None:
+            aggregate[key] = {
+                "first_activity_id": row.activity_id,
+                "first_time": start,
+                "last_activity_id": row.activity_id,
+                "last_time": start,
+                "visit_count": 1,
+            }
+            continue
+        entry["visit_count"] += 1
+        if start is not None:
+            if entry["first_time"] is None or start < entry["first_time"]:
+                entry["first_time"] = start
+                entry["first_activity_id"] = row.activity_id
+            if entry["last_time"] is None or start > entry["last_time"]:
+                entry["last_time"] = start
+                entry["last_activity_id"] = row.activity_id
+
+    batch = [
+        TileVisit(zoom=zoom, tile_x=tile_x, tile_y=tile_y, **entry)
+        for (zoom, tile_x, tile_y), entry in aggregate.items()
+    ]
+    for i in range(0, len(batch), 5_000):
+        DB.session.add_all(batch[i : i + 5_000])
+    DB.session.commit()
+    logger.info(f"Rebuilt {len(batch)} tile visits from activity tiles.")
+
+
+def _process_activity(
+    repository: ActivityRepository, activity_id: int, counts_for_explorer: bool = True
+) -> None:
     activity = repository.get_activity_by_id(activity_id)
     time_series = repository.get_time_series(activity_id)
     fallback_time = _fallback_timestamp_for_activity(activity)
@@ -379,13 +474,14 @@ def _process_activity(repository: ActivityRepository, activity_id: int) -> None:
             activity_tiles["time"],
             tiles,
         ):
-            if activity.kind.consider_for_achievements:
-                if pd.isna(time) and fallback_time is not None:
-                    time = fallback_time
-                if time is not None and time.tz is None:
-                    time = time.tz_localize("UTC")
-                has_time = pd.notna(time)
-                db_time = time.to_pydatetime() if has_time else None
+            if pd.isna(time) and fallback_time is not None:
+                time = fallback_time
+            if time is not None and time.tz is None:
+                time = time.tz_localize("UTC")
+            has_time = pd.notna(time)
+            db_time = time.to_pydatetime() if has_time else None
+
+            if counts_for_explorer:
                 existing = existing_by_tile.get(tile)
                 if existing is None:
                     existing_by_tile[tile] = TileVisit(
@@ -434,10 +530,11 @@ def _process_activity(repository: ActivityRepository, activity_id: int) -> None:
                     tile_x=tile[0],
                     tile_y=tile[1],
                     activity_id=activity_id,
+                    time=db_time,
                 )
             )
 
-        if activity.kind.consider_for_achievements:
+        if counts_for_explorer:
             DB.session.commit()
 
         # Move up one layer in the quad-tree.

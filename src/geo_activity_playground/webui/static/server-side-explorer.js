@@ -12,6 +12,7 @@ import { add_layers_to_map } from '/static/map-layers.js';
  * @param {string} config.attribution - Map tile attribution
  * @param {Object} [config.bbox] - Initial bounding box as GeoJSON (optional)
  * @param {Object} [config.squarePlanner] - Square planner config (optional)
+ * @param {string} [config.searchQuery] - Active search as a query string (optional)
  */
 export function initExplorerMap(config) {
     const {
@@ -22,7 +23,8 @@ export function initExplorerMap(config) {
         zoomLevels = [zoom],
         attribution,
         bbox = null,
-        squarePlanner = null
+        squarePlanner = null,
+        searchQuery = null
     } = config;
 
     const map = L.map(elementId, {
@@ -35,10 +37,14 @@ export function initExplorerMap(config) {
         zoom,
         zoomLevels,
         attribution,
-        squarePlanner
+        squarePlanner,
+        searchQuery
     });
 
-    initClusterHistoryLayer(map, zoom);
+    // The cluster history describes the unfiltered activities only.
+    if (!searchQuery) {
+        initClusterHistoryLayer(map, zoom);
+    }
     setupInaccessibleLinks(map, zoom);
 
     // Fit to bounding box if provided

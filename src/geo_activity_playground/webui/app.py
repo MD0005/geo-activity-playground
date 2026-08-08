@@ -137,7 +137,7 @@ def _migrate_null_activity_fields_to_unknown() -> None:
         sqlalchemy.select(Kind).where(Kind.name == DEFAULT_UNKNOWN_NAME)
     )
     if unknown_kind is None:
-        unknown_kind = Kind(name=DEFAULT_UNKNOWN_NAME, consider_for_achievements=True)
+        unknown_kind = Kind(name=DEFAULT_UNKNOWN_NAME)
         DB.session.add(unknown_kind)
 
     unknown_equipment = DB.session.scalar(

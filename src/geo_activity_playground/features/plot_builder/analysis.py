@@ -39,7 +39,6 @@ CONTINUOUS_VARIABLES = {
 DISCRETE_VARIABLES = {
     "equipment": _("Equipment"),
     "kind": _("Activity kind"),
-    "consider_for_achievements": _("Consider for achievements"),
     "year(start_local):O": _("Year"),
     "iso_year:O": _("ISO Year"),
     "yearquarter(start_local)": _("Year, Quarter"),
@@ -57,7 +56,6 @@ GROUP_BY_VARIABLES = {
     "": _("(no grouping)"),
     "equipment": _("Equipment"),
     "kind": _("Activity kind"),
-    "consider_for_achievements": _("Consider for achievements"),
     "year": _("Year"),
     "iso_year": _("ISO Year"),
     "week": _("ISO Week"),

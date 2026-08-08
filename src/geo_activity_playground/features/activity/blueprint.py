@@ -51,7 +51,7 @@ from ...core.tile_visits import (
 from ...webui.authenticator import Authenticator, needs_authentication
 from ...webui.columns import TIME_SERIES_COLUMNS
 from ..directory_import.importer import get_metadata_from_path
-from ..explorer.clustering import get_cluster_tile_diff_for_activity
+from ..explorer.clustering import get_cluster_tiles_gained_by_activity
 from ..explorer.model import TileStyleName, get_tile_styles
 
 logger = logging.getLogger(__name__)
@@ -174,9 +174,7 @@ def make_activity_blueprint(
                 (tile_visit.tile_x, tile_visit.tile_y)
                 for tile_visit in get_first_visits_for_activity(activity.id, zoom)
             }
-            cluster_gained, _removed = get_cluster_tile_diff_for_activity(
-                zoom, activity.id
-            )
+            cluster_gained = get_cluster_tiles_gained_by_activity(zoom, activity.id)
             new_tiles_per_zoom[zoom] = len(new_tiles)
             affected = new_tiles | cluster_gained
             if affected:

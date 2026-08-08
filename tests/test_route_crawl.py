@@ -138,6 +138,8 @@ def _arguments_for(rule: Rule, samples: dict[str, object]) -> dict[str, object]:
                 values[argument] = "geojson"
             case "scheme":
                 values[argument] = "color"
+            case "plot":
+                values[argument] = "cluster"
             case _:
                 values[argument] = samples[argument]
     return values
