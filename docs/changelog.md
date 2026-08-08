@@ -20,6 +20,7 @@ Types of changes
 Added:
 
 - The rendering of explorer tiles can now be fully customized. For each kind of special tile (e.g. visited, missing, new in this activity), you can set a fill color, border color, border style and stripe color. ([GH-366](https://github.com/martin-ueding/geo-activity-playground/issues/366))
+- Expose the selection of explorer zoom levels other than 14 and 17. ([GH-483](https://github.com/martin-ueding/geo-activity-playground/issues/483))
 
 Changed:
 

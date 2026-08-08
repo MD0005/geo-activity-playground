@@ -45,7 +45,10 @@ from ...core.tile_visits import (
 )
 from ...features.activity_photos.model import Photo
 from ...features.directory_import.blueprint import register_directory_import_settings
-from ...features.explorer.clustering import compute_tile_evolution
+from ...features.explorer.clustering import (
+    compute_tile_evolution,
+    delete_tile_evolution,
+)
 from ...features.explorer.model import (
     TILE_STYLE_DEFAULTS,
     BorderStroke,
@@ -55,6 +58,10 @@ from ...features.explorer.model import (
     ExplorerTileBookmark,
     TileStyleName,
     get_tile_styles,
+)
+from ...features.explorer.zoom_levels import (
+    EXPLORER_ZOOM_LEVEL_NAMES,
+    SELECTABLE_EXPLORER_ZOOM_LEVELS,
 )
 from ...features.hammerhead.blueprint import register_hammerhead_settings
 from ...features.heatmap.blueprint import register_heatmap_settings
@@ -802,6 +809,47 @@ def make_settings_blueprint(
                     col.name in config_accessor.ui().visible_table_columns,
                 )
                 for col in TOGGLEABLE_TABLE_COLUMNS
+            ],
+        )
+
+    @blueprint.route("/explorer-zoom-levels", methods=["GET", "POST"])
+    @needs_authentication(authenticator)
+    def explorer_zoom_levels():
+        ui_config = config_accessor.ui()
+        if request.method == "POST":
+            selected = {
+                int(value)
+                for value in request.form.getlist("zoom")
+                if value.isdigit() and 0 <= int(value) <= 19
+            }
+            if selected:
+                previous = set(ui_config.explorer_zoom_levels)
+                ui_config.explorer_zoom_levels = sorted(selected)
+                config_accessor.save()
+                for zoom in sorted(previous - selected):
+                    delete_tile_evolution(zoom)
+                added = sorted(selected - previous)
+                if added:
+                    compute_tile_evolution(ui_config, added)
+                flasher.flash_message(
+                    _("Updated explorer zoom levels."), FlashTypes.SUCCESS
+                )
+            else:
+                flasher.flash_message(
+                    _("At least one zoom level has to be enabled."), FlashTypes.WARNING
+                )
+        return render_template(
+            "settings/explorer-zoom-levels.html.j2",
+            zoom_levels=[
+                (
+                    zoom,
+                    EXPLORER_ZOOM_LEVEL_NAMES.get(zoom, ""),
+                    zoom in ui_config.explorer_zoom_levels,
+                )
+                for zoom in sorted(
+                    set(SELECTABLE_EXPLORER_ZOOM_LEVELS)
+                    | set(ui_config.explorer_zoom_levels)
+                )
             ],
         )
 

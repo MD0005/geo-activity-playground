@@ -64,6 +64,7 @@ from ..features.eddington.blueprint import register_eddington_blueprint
 from ..features.equipment.blueprint import make_equipment_blueprint
 from ..features.explorer.blueprint import make_explorer_blueprint
 from ..features.explorer.model import ExplorerTileBookmark  # noqa: F401
+from ..features.explorer.zoom_levels import explorer_zoom_level_label
 from ..features.explorer_video.video_blueprint import make_explorer_video_blueprint
 from ..features.hall_of_fame.blueprint import make_hall_of_fame_blueprint
 from ..features.hammerhead.model import get_hammerhead_auth
@@ -332,6 +333,8 @@ def create_app(
     @app.template_global("unique_id")
     def unique_id():
         return f"id-{uuid.uuid4()}"
+
+    app.add_template_global(explorer_zoom_level_label)
 
     @app.template_filter()
     def td(v: datetime.timedelta):

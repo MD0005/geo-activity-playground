@@ -161,8 +161,8 @@ def _state_from_payload(payload_json: str) -> ClusterReplayState:
     return state
 
 
-def compute_tile_evolution(config: UiConfig) -> None:
-    for zoom in config.explorer_zoom_levels:
+def compute_tile_evolution(config: UiConfig, zooms: list[int] | None = None) -> None:
+    for zoom in config.explorer_zoom_levels if zooms is None else zooms:
         # Get tile history from database
         tile_history = get_tile_history_df(zoom)
         rebuild_cluster_history_for_zoom(zoom, tile_history)
@@ -171,6 +171,20 @@ def compute_tile_evolution(config: UiConfig) -> None:
         _compute_cluster_evolution(tile_history, state, zoom)
         _compute_square_history(tile_history, state, zoom)
         _persist_evolution_to_db(zoom, state)
+
+
+def delete_tile_evolution(zoom: int) -> None:
+    """Drop all derived cluster and square data of a zoom level."""
+    for model in (
+        ClusterHistoryCheckpoint,
+        ClusterHistoryEvent,
+        ClusterMembership,
+        ClusterSizeHistory,
+        ExplorerSquare,
+        SquareHistory,
+    ):
+        DB.session.query(model).filter(model.zoom == zoom).delete()
+    DB.session.commit()
 
 
 def _persist_evolution_to_db(zoom: int, state: "TileEvolutionState") -> None:

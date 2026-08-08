@@ -220,10 +220,11 @@ def make_explorer_blueprint(
     def enable_zoom_level(zoom: int) -> ResponseReturnValue:
         if 0 <= zoom <= 19:
             ui_config = config_accessor.ui()
-            ui_config.explorer_zoom_levels.append(zoom)
-            ui_config.explorer_zoom_levels.sort()
-            config_accessor.save()
-            compute_tile_evolution(ui_config)
+            if zoom not in ui_config.explorer_zoom_levels:
+                ui_config.explorer_zoom_levels.append(zoom)
+                ui_config.explorer_zoom_levels.sort()
+                config_accessor.save()
+                compute_tile_evolution(ui_config, [zoom])
             flash(f"Enabled {zoom=} for explorer tiles.", category="success")
         else:
             flash(f"{zoom=} is not valid, must be between 0 and 19.", category="danger")
