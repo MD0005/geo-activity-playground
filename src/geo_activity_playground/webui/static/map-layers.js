@@ -123,7 +123,10 @@ export function add_layers_to_map(map, config) {
                     return [gray, gray, gray];
                 },
                 opacity: window.gapHillshade?.opacity ?? 0.5,
-                maxZoom: 17,
+                // Mapterhorn has no elevation tiles above 17; upscale instead of
+                // dropping the layer, which Leaflet does when maxZoom is exceeded.
+                maxNativeZoom: 17,
+                maxZoom: 19,
                 pane: mapterhornPaneName
             })
             : L.layerGroup(),

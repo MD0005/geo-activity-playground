@@ -29,6 +29,7 @@ Changed:
 Fixed:
 
 - Marking a tile as inaccessible updates the “Inaccessible Tiles” layer right away. ([GH-478](https://github.com/martin-ueding/geo-activity-playground/issues/478))
+- The “Mapterhorn Hillshade” overlay is upscaled above zoom level 17 instead of vanishing. ([GH-475](https://github.com/martin-ueding/geo-activity-playground/issues/475))
 
 ## Version 1.46.0 — 2026-08-03
 
