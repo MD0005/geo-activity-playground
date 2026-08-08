@@ -33,7 +33,6 @@ from ...core.datamodel import (
     StoredSearchQuery,
     Tag,
     TileVisit,
-    UiConfig,
     activity_tag_association_table,
 )
 from ...core.enrichment import enrichment_set_timezone, update_and_commit
@@ -48,10 +47,14 @@ from ...features.activity_photos.model import Photo
 from ...features.directory_import.blueprint import register_directory_import_settings
 from ...features.explorer.clustering import compute_tile_evolution
 from ...features.explorer.model import (
+    TILE_STYLE_DEFAULTS,
+    BorderStroke,
     ClusterHistoryCheckpoint,
     ClusterHistoryEvent,
     ClusterMembership,
     ExplorerTileBookmark,
+    TileStyleName,
+    get_tile_styles,
 )
 from ...features.hammerhead.blueprint import register_hammerhead_settings
 from ...features.heatmap.blueprint import register_heatmap_settings
@@ -148,11 +151,6 @@ def int_or_none(s: str) -> int | None:
         except ValueError as e:
             flash(f"Cannot parse integer from {s}: {e}", category="danger")
     return None
-
-
-def _ui_config_default(field: str):
-    """Return the column default declared on ``UiConfig`` for display placeholders."""
-    return UiConfig.__table__.c[field].default.arg
 
 
 def _reprocess_all_activities(
@@ -523,66 +521,68 @@ def make_settings_blueprint(
             color_scheme_for_heatmap_avail=MATPLOTLIB_COLOR_SCHEMES_CONTINUOUS,
         )
 
-    @blueprint.route("/color-strategy", methods=["GET", "POST"])
+    @blueprint.route("/tile-rendering", methods=["GET", "POST"])
     @needs_authentication(authenticator)
-    def color_strategy():
-        color_fields = [
-            ("color_strategy_max_cluster_color", _("Max cluster")),
-            (
-                "color_strategy_max_cluster_other_color",
-                _("Other clusters besides the maximum"),
-            ),
-            (
-                "color_strategy_visited_color",
-                _("Visited tiles that are not part of a cluster"),
-            ),
-            (
-                "color_strategy_new_tile_color",
-                _("Tiles newly discovered by an activity"),
-            ),
-            (
-                "color_strategy_new_cluster_color",
-                _("Tiles that joined a cluster with an activity"),
-            ),
-        ]
+    def tile_rendering():
+        labels = {
+            TileStyleName.VISITED: _("Visited"),
+            TileStyleName.MISSING: _("Missing"),
+            TileStyleName.NEW_TILE: _("New in this activity"),
+            TileStyleName.NEW_CLUSTER: _("New cluster in this activity"),
+            TileStyleName.MAX_CLUSTER: _("Part of max cluster"),
+            TileStyleName.OTHER_CLUSTER: _("Part of other cluster"),
+            TileStyleName.INACCESSIBLE: _("Inaccessible"),
+        }
+        styles = get_tile_styles()
 
         if request.method == "POST":
-            for field, _label in color_fields:
-                setattr(
-                    config_accessor.ui(),
-                    field,
-                    _combine_color(
-                        request.form[field], int(request.form[f"{field}_alpha"])
-                    ),
+            for name, style in styles.items():
+                for element in ("fill", "border", "stripe"):
+                    setattr(
+                        style,
+                        f"{element}_color",
+                        _combine_color(
+                            request.form[f"{name}_{element}_color"],
+                            int(request.form[f"{name}_{element}_alpha"]),
+                        ),
+                    )
+                style.border_width = max(0, int(request.form[f"{name}_border_width"]))
+                style.border_stroke = BorderStroke(
+                    request.form[f"{name}_border_stroke"]
                 )
             config_accessor.ui().color_strategy_cmap_opacity = float(
                 request.form["cmap_opacity"]
             )
             config_accessor.save()
-            flash(_("Updated color strategy values."), category="success")
-
-        colors = []
-        for field, label in color_fields:
-            color, alpha = _split_hex_into_color_alpha(
-                getattr(config_accessor.ui(), field)
-            )
-            color_default, alpha_default = _split_hex_into_color_alpha(
-                _ui_config_default(field)
-            )
-            colors.append(
-                {
-                    "field": field,
-                    "label": label,
-                    "color": color,
-                    "alpha": alpha,
-                    "color_default": color_default,
-                    "alpha_default": alpha_default,
-                }
-            )
+            flash(_("Updated tile rendering."), category="success")
 
         return render_template(
-            "settings/color-strategy.html.j2",
-            colors=colors,
+            "settings/tile-rendering.html.j2",
+            tile_styles=[
+                {
+                    "name": name,
+                    "label": labels[name],
+                    "style": style,
+                    "default_colors": {
+                        element: _split_hex_into_color_alpha(
+                            TILE_STYLE_DEFAULTS[name][f"{element}_color"]
+                        )
+                        for element in ("fill", "border", "stripe")
+                    },
+                    "defaults": TILE_STYLE_DEFAULTS[name],
+                    "colors": {
+                        element: _split_hex_into_color_alpha(
+                            getattr(style, f"{element}_color")
+                        )
+                        for element in ("fill", "border", "stripe")
+                    },
+                }
+                for name, style in styles.items()
+            ],
+            border_strokes=[
+                (BorderStroke.SOLID, _("Solid")),
+                (BorderStroke.DASHED, _("Dashed")),
+            ],
             cmap_opacity=config_accessor.ui().color_strategy_cmap_opacity,
         )
 

@@ -1,8 +1,10 @@
 import abc
+import dataclasses
 import datetime
 import functools
 import hashlib
 import itertools
+from collections.abc import Iterable
 from collections.abc import Set as AbstractSet
 from types import SimpleNamespace
 from typing import Any, NamedTuple
@@ -24,20 +26,14 @@ from .clustering import (
     get_cluster_tile_diff_for_activity,
     get_max_cluster,
 )
+from .model import BorderStroke, TileStyle, TileStyleName, get_tile_styles
 
 SQUARE_LINE_WIDTH = 3
 SQUARE_COLOR = np.array([228, 26, 28, 255], dtype=np.float32) / 256.0
 GRID_COLOR = np.array([0.5, 0.5, 0.5, 0.5], dtype=np.float32)
 
-INACCESSIBLE_STRIPE_COLOR = np.array([0.5, 0.5, 0.5, 0.6], dtype=np.float32)
-INACCESSIBLE_STRIPE_PERIOD = 16
-INACCESSIBLE_STRIPE_THICKNESS = 8
-
-
-def blend_color(
-    base: np.ndarray, addition: np.ndarray | float, opacity: float
-) -> np.ndarray:
-    return (1 - opacity) * base + opacity * addition
+STRIPES_PER_TILE = 8
+DASHES_PER_TILE_EDGE = 8
 
 
 @functools.cache
@@ -64,59 +60,163 @@ class SolidColor(TilePattern):
         return np.broadcast_to(self._color, (height, width, 4)).copy()
 
 
-class HatchedPattern(TilePattern):
-    def __init__(self, color: np.ndarray, period: int, thickness: int) -> None:
-        self._color = np.asarray(color, dtype=np.float32)
-        self._period = period
-        self._thickness = thickness
+def _over(source: np.ndarray, target: np.ndarray) -> np.ndarray:
+    """Alpha-composite ``source`` over ``target``, both straight-alpha RGBA."""
+    source_alpha = source[..., 3:4]
+    target_alpha = target[..., 3:4]
+    out_alpha = source_alpha + target_alpha * (1 - source_alpha)
+    out_rgb = np.divide(
+        source[..., :3] * source_alpha
+        + target[..., :3] * target_alpha * (1 - source_alpha),
+        out_alpha,
+        out=np.zeros_like(source[..., :3]),
+        where=out_alpha > 0,
+    )
+    return np.concatenate([out_rgb, out_alpha], axis=-1)
 
-    def rasterize(self, shape: tuple[int, int]) -> np.ndarray:
-        height, width = shape
-        rgba = np.zeros((height, width, 4), dtype=np.float32)
-        mask = np.fromfunction(
-            lambda i, j: (i + j) % self._period < self._thickness,
-            (height, width),
-            dtype=int,
+
+@dataclasses.dataclass(frozen=True)
+class TileStyleSpec:
+    """Immutable, hashable snapshot of a :class:`TileStyle` row."""
+
+    fill_color: tuple[float, float, float, float]
+    border_color: tuple[float, float, float, float]
+    border_width: int
+    border_dashed: bool
+    stripe_color: tuple[float, float, float, float]
+
+    @classmethod
+    def from_model(cls, style: TileStyle) -> "TileStyleSpec":
+        return cls(
+            fill_color=hex_color_to_tuple(style.fill_color),
+            border_color=hex_color_to_tuple(style.border_color),
+            border_width=style.border_width,
+            border_dashed=style.border_stroke == BorderStroke.DASHED,
+            stripe_color=hex_color_to_tuple(style.stripe_color),
         )
-        rgba[mask] = self._color
-        return rgba
 
 
-class InsetRingsPattern(TilePattern):
-    """Nested borders drawn inside the tile, outermost color first.
+@functools.cache
+def hex_color_to_tuple(color: str) -> tuple[float, float, float, float]:
+    values = tuple(hex_color_to_float(color).reshape(4).tolist())
+    return values  # type: ignore[return-value]
+
+
+def _stripe_mask(width: int) -> np.ndarray:
+    """Diagonal stripes with a fixed count per tile, so zooming keeps them."""
+    period = 2 * width / STRIPES_PER_TILE
+    i, j = np.indices((width, width), dtype=np.float32)
+    return ((i + j) % period) < period / 2
+
+
+def _border_mask(width: int, inset: int, thickness: int, dashed: bool) -> np.ndarray:
+    mask = np.zeros((width, width), dtype=bool)
+    span = slice(inset, width - inset)
+    if dashed:
+        period = max(2.0, width / DASHES_PER_TILE_EDGE)
+        along = (np.arange(width, dtype=np.float32) % period) < period / 2
+    else:
+        along = np.ones(width, dtype=bool)
+    mask[inset : inset + thickness, span] = along[np.newaxis, span]
+    mask[width - inset - thickness : width - inset, span] = along[np.newaxis, span]
+    mask[span, inset : inset + thickness] = along[span, np.newaxis]
+    mask[span, width - inset - thickness : width - inset] = along[span, np.newaxis]
+    return mask
+
+
+@functools.lru_cache(maxsize=256)
+def _rasterize_specs(specs: tuple[TileStyleSpec, ...], width: int) -> np.ndarray:
+    """Render a stack of styles; the first spec ends up on top and outermost.
+
+    The result is shared between all tiles with the same styles, so callers must
+    treat it as read-only.
+    """
+    rgba = np.zeros((width, width, 4), dtype=np.float32)
+
+    for spec in reversed(specs):
+        if spec.fill_color[3] > 0:
+            fill = np.broadcast_to(
+                np.array(spec.fill_color, dtype=np.float32), (width, width, 4)
+            )
+            rgba = _over(fill, rgba)
+
+    stripes = _stripe_mask(width)
+    for spec in reversed(specs):
+        if spec.stripe_color[3] > 0:
+            layer = np.zeros((width, width, 4), dtype=np.float32)
+            layer[stripes] = spec.stripe_color
+            rgba = _over(layer, rgba)
+
+    inset = 0
+    for spec in specs:
+        if spec.border_color[3] == 0 or spec.border_width == 0:
+            continue
+        if 2 * inset >= width:
+            break
+        thickness = min(
+            max(1, round(spec.border_width * width / OSM_TILE_SIZE)), width - 2 * inset
+        )
+        layer = np.zeros((width, width, 4), dtype=np.float32)
+        layer[_border_mask(width, inset, thickness, spec.border_dashed)] = (
+            spec.border_color
+        )
+        rgba = _over(layer, rgba)
+        inset += thickness
+
+    return rgba
+
+
+class StyledTilePattern(TilePattern):
+    """Fills and stripes composited by priority, borders nested inside the tile.
 
     Staying within the tile means that borders of adjacent tiles never overlap,
     and a tile that belongs to several categories shows one ring per category.
     """
 
-    def __init__(self, ring_colors: list[np.ndarray]) -> None:
-        self._ring_colors = ring_colors
+    def __init__(self, specs: Iterable[TileStyleSpec]) -> None:
+        self._specs = tuple(specs)
+
+    def __bool__(self) -> bool:
+        return bool(self._specs)
 
     def rasterize(self, shape: tuple[int, int]) -> np.ndarray:
-        height, width = shape
-        rgba = np.zeros((height, width, 4), dtype=np.float32)
-        thickness = max(1, min(width // 24, 6))
-        inset = 0
-        for color in self._ring_colors:
-            if 2 * inset >= min(height, width):
-                break
-            rgba[inset : height - inset, inset : width - inset] = color
-            inset += thickness
-        if 2 * inset < min(height, width):
-            rgba[inset : height - inset, inset : width - inset] = 0.0
-        return rgba
+        _, width = shape
+        return _rasterize_specs(self._specs, width)
 
 
-HATCHED_PATTERN = HatchedPattern(
-    INACCESSIBLE_STRIPE_COLOR,
-    INACCESSIBLE_STRIPE_PERIOD,
-    INACCESSIBLE_STRIPE_THICKNESS,
-)
+PREVIEW_CHECKER_SIZE = 16
+
+
+def render_tile_style_preview(
+    specs: Iterable[TileStyleSpec], width: int = OSM_TILE_SIZE
+) -> np.ndarray:
+    """Draw styles onto a checkerboard so that transparency stays visible."""
+    i, j = np.indices((width, width))
+    shade = np.where(
+        (i // PREVIEW_CHECKER_SIZE + j // PREVIEW_CHECKER_SIZE) % 2 == 0, 0.95, 0.8
+    ).astype(np.float32)
+    background = np.ones((width, width, 4), dtype=np.float32)
+    background[..., :3] = shade[..., np.newaxis]
+    return _over(StyledTilePattern(specs).rasterize((width, width)), background)
+
+
+def get_tile_style_specs() -> dict[TileStyleName, TileStyleSpec]:
+    return {
+        name: TileStyleSpec.from_model(style)
+        for name, style in get_tile_styles().items()
+    }
+
+
+type TileStyleSpecs = dict[TileStyleName, TileStyleSpec]
 
 
 class ColorStrategy(abc.ABC):
     @abc.abstractmethod
     def color(self, tile_xy: tuple[int, int]) -> TilePattern | None: ...
+
+
+def _styled(styles: TileStyleSpecs, *names: TileStyleName) -> TilePattern:
+    return StyledTilePattern(styles[name] for name in names)
 
 
 class MaxClusterColorStrategy(ColorStrategy):
@@ -125,27 +225,21 @@ class MaxClusterColorStrategy(ColorStrategy):
         membership: dict[tuple[int, int], tuple[int, int]],
         max_cluster_id: tuple[int, int] | None,
         tile_visits,
-        config: UiConfig,
+        styles: TileStyleSpecs,
     ):
         self.membership = membership
         self.max_cluster_id = max_cluster_id
         self.tile_visits = tile_visits
-        self._config = config
+        self._styles = styles
 
     def color(self, tile_xy: tuple[int, int]) -> TilePattern | None:
         cluster_id = self.membership.get(tile_xy)
         if cluster_id is not None:
             if cluster_id == self.max_cluster_id:
-                return SolidColor(
-                    hex_color_to_float(self._config.color_strategy_max_cluster_color)
-                )
-            return SolidColor(
-                hex_color_to_float(self._config.color_strategy_max_cluster_other_color)
-            )
+                return _styled(self._styles, TileStyleName.MAX_CLUSTER)
+            return _styled(self._styles, TileStyleName.OTHER_CLUSTER)
         elif tile_xy in self.tile_visits:
-            return SolidColor(
-                hex_color_to_float(self._config.color_strategy_visited_color)
-            )
+            return _styled(self._styles, TileStyleName.VISITED)
         else:
             return None
 
@@ -156,27 +250,33 @@ class ColorfulClusterColorStrategy(ColorStrategy):
         membership: dict[tuple[int, int], tuple[int, int]],
         tile_visits,
         config: UiConfig,
+        styles: TileStyleSpecs,
     ):
         self.membership = membership
         self.tile_visits = tile_visits
         self._cmap = matplotlib.colormaps["hsv"]
         self._config = config
+        self._styles = styles
 
     def color(self, tile_xy: tuple[int, int]) -> TilePattern | None:
         cluster_id = self.membership.get(tile_xy)
         if cluster_id is not None:
-            m = hashlib.sha256()
-            m.update(str(cluster_id).encode())
-            d = int(m.hexdigest(), base=16) / (256.0**m.digest_size)
             return SolidColor(
-                self._cmap(d)[:3] + (self._config.color_strategy_cmap_opacity,)
+                _cluster_cmap_color(
+                    self._cmap, cluster_id, self._config.color_strategy_cmap_opacity
+                )
             )
         elif tile_xy in self.tile_visits:
-            return SolidColor(
-                hex_color_to_float(self._config.color_strategy_visited_color)
-            )
+            return _styled(self._styles, TileStyleName.VISITED)
         else:
             return None
+
+
+def _cluster_cmap_color(cmap, cluster_id: tuple[int, int], opacity: float) -> tuple:
+    m = hashlib.sha256()
+    m.update(str(cluster_id).encode())
+    d = int(m.hexdigest(), base=16) / (256.0**m.digest_size)
+    return cmap(d)[:3] + (opacity,)
 
 
 def _replay_root(
@@ -189,18 +289,18 @@ def _replay_root(
 
 
 class HistoricalColorfulClusterColorStrategy(ColorStrategy):
-    def __init__(self, state, config: UiConfig):
-        self._config = config
-        self._cmap = matplotlib.colormaps["hsv"]
+    def __init__(self, state, config: UiConfig, styles: TileStyleSpecs):
+        self._styles = styles
+        cmap = matplotlib.colormaps["hsv"]
         self._color_by_tile: dict[tuple[int, int], TilePattern] = {}
         self._visited_tiles = set(state.visited_tiles)
         for tile in state.cluster_tiles:
-            cluster_id = _replay_root(state.parents, tile)
-            m = hashlib.sha256()
-            m.update(str(cluster_id).encode())
-            d = int(m.hexdigest(), base=16) / (256.0**m.digest_size)
             self._color_by_tile[tile] = SolidColor(
-                self._cmap(d)[:3] + (self._config.color_strategy_cmap_opacity,)
+                _cluster_cmap_color(
+                    cmap,
+                    _replay_root(state.parents, tile),
+                    config.color_strategy_cmap_opacity,
+                )
             )
 
     def color(self, tile_xy: tuple[int, int]) -> TilePattern | None:
@@ -208,15 +308,13 @@ class HistoricalColorfulClusterColorStrategy(ColorStrategy):
         if color is not None:
             return color
         if tile_xy in self._visited_tiles:
-            return SolidColor(
-                hex_color_to_float(self._config.color_strategy_visited_color)
-            )
+            return _styled(self._styles, TileStyleName.VISITED)
         return None
 
 
 class HistoricalMaxClusterColorStrategy(ColorStrategy):
-    def __init__(self, state, config: UiConfig):
-        self._config = config
+    def __init__(self, state, styles: TileStyleSpecs):
+        self._styles = styles
         max_root = max(
             state.component_sizes, key=state.component_sizes.get, default=None
         )
@@ -232,25 +330,22 @@ class HistoricalMaxClusterColorStrategy(ColorStrategy):
 
     def color(self, tile_xy: tuple[int, int]) -> TilePattern | None:
         if tile_xy in self._max_members:
-            return SolidColor(
-                hex_color_to_float(self._config.color_strategy_max_cluster_color)
-            )
+            return _styled(self._styles, TileStyleName.MAX_CLUSTER)
         if tile_xy in self._cluster_tiles:
-            return SolidColor(
-                hex_color_to_float(self._config.color_strategy_max_cluster_other_color)
-            )
+            return _styled(self._styles, TileStyleName.OTHER_CLUSTER)
         if tile_xy in self._visited_tiles:
-            return SolidColor(
-                hex_color_to_float(self._config.color_strategy_visited_color)
-            )
+            return _styled(self._styles, TileStyleName.VISITED)
         return None
 
 
 class VisitTimeColorStrategy(ColorStrategy):
-    def __init__(self, tile_visits, config: UiConfig, use_first=True):
+    def __init__(
+        self, tile_visits, config: UiConfig, styles: TileStyleSpecs, use_first=True
+    ):
         self.tile_visits = tile_visits
         self.use_first = use_first
         self._config = config
+        self._styles = styles
 
     def color(self, tile_xy: tuple[int, int]) -> TilePattern | None:
         if tile_xy in self.tile_visits:
@@ -261,12 +356,10 @@ class VisitTimeColorStrategy(ColorStrategy):
                 tile_info["first_time"] if self.use_first else tile_info["last_time"]
             )
             if pd.isna(relevant_time):
-                color = hex_color_to_float(self._config.color_strategy_visited_color)
-            else:
-                last_age_days = (today - relevant_time.date()).days
-                color = cmap(max(1 - last_age_days / (2 * 365), 0.0))
-                color = color[:3] + (self._config.color_strategy_cmap_opacity,)
-            return SolidColor(color)
+                return _styled(self._styles, TileStyleName.VISITED)
+            last_age_days = (today - relevant_time.date()).days
+            color = cmap(max(1 - last_age_days / (2 * 365), 0.0))
+            return SolidColor(color[:3] + (self._config.color_strategy_cmap_opacity,))
         else:
             return None
 
@@ -287,29 +380,25 @@ class NumVisitsColorStrategy(ColorStrategy):
 
 
 class MissingColorStrategy(ColorStrategy):
-    def __init__(self, tile_visits, config: UiConfig):
+    def __init__(self, tile_visits, styles: TileStyleSpecs):
         self.tile_visits = tile_visits
-        self._config = config
+        self._styles = styles
 
     def color(self, tile_xy: tuple[int, int]) -> TilePattern | None:
         if tile_xy in self.tile_visits:
             return None
         else:
-            return SolidColor(
-                hex_color_to_float(self._config.color_strategy_visited_color)
-            )
+            return _styled(self._styles, TileStyleName.MISSING)
 
 
 class VisitedColorStrategy(ColorStrategy):
-    def __init__(self, tile_visits, config: UiConfig):
+    def __init__(self, tile_visits, styles: TileStyleSpecs):
         self.tile_visits = tile_visits
-        self._config = config
+        self._styles = styles
 
     def color(self, tile_xy: tuple[int, int]) -> TilePattern | None:
         if tile_xy in self.tile_visits:
-            return SolidColor(
-                hex_color_to_float(self._config.color_strategy_visited_color)
-            )
+            return _styled(self._styles, TileStyleName.VISITED)
         else:
             return None
 
@@ -321,36 +410,32 @@ class ActivityHighlightColorStrategy(ColorStrategy):
         self,
         new_tiles: AbstractSet[tuple[int, int]],
         cluster_gained: AbstractSet[tuple[int, int]],
-        config: UiConfig,
+        styles: TileStyleSpecs,
     ):
         self._new_tiles = new_tiles
         self._cluster_gained = cluster_gained
-        self._config = config
+        self._styles = styles
 
     def color(self, tile_xy: tuple[int, int]) -> TilePattern | None:
-        ring_colors = []
+        names = []
         if tile_xy in self._new_tiles:
-            ring_colors.append(
-                hex_color_to_float(self._config.color_strategy_new_tile_color)
-            )
+            names.append(TileStyleName.NEW_TILE)
         if tile_xy in self._cluster_gained:
-            ring_colors.append(
-                hex_color_to_float(self._config.color_strategy_new_cluster_color)
-            )
-        return InsetRingsPattern(ring_colors) if ring_colors else None
+            names.append(TileStyleName.NEW_CLUSTER)
+        return _styled(self._styles, *names) if names else None
 
 
 class SquarePlannerColorStrategy(ColorStrategy):
     def __init__(
         self,
         tile_visits,
-        config: UiConfig,
+        styles: TileStyleSpecs,
         square_x: int,
         square_y: int,
         square_size: int,
     ):
         self.tile_visits = tile_visits
-        self._config = config
+        self._styles = styles
         self.square_x = square_x
         self.square_y = square_y
         self.square_size = square_size
@@ -366,9 +451,7 @@ class SquarePlannerColorStrategy(ColorStrategy):
             else:
                 return SolidColor(hex_color_to_float("#aa00004d"))
         elif tile_xy in self.tile_visits:
-            return SolidColor(
-                hex_color_to_float(self._config.color_strategy_visited_color)
-            )
+            return _styled(self._styles, TileStyleName.VISITED)
         else:
             return None
 
@@ -417,6 +500,7 @@ def _resolve_color_strategy(
     color_strategy_name = request.args.get("color_strategy", "colorful_cluster")
     if color_strategy_name == "default":
         color_strategy_name = config.cluster_color_strategy
+    styles = get_tile_style_specs()
     match color_strategy_name:
         case "max_cluster":
             if historical_state is None:
@@ -425,42 +509,46 @@ def _resolve_color_strategy(
                 )
                 max_cluster_id, _ = get_max_cluster(zoom)
                 return MaxClusterColorStrategy(
-                    membership, max_cluster_id, tile_visits, config
+                    membership, max_cluster_id, tile_visits, styles
                 )
             else:
-                return HistoricalMaxClusterColorStrategy(historical_state, config)
+                return HistoricalMaxClusterColorStrategy(historical_state, styles)
         case "colorful_cluster":
             if historical_state is None:
                 membership = get_cluster_membership_in_bounds(
                     zoom, tx_min, tx_max, ty_min, ty_max
                 )
-                return ColorfulClusterColorStrategy(membership, tile_visits, config)
+                return ColorfulClusterColorStrategy(
+                    membership, tile_visits, config, styles
+                )
             else:
-                return HistoricalColorfulClusterColorStrategy(historical_state, config)
+                return HistoricalColorfulClusterColorStrategy(
+                    historical_state, config, styles
+                )
         case "first":
-            return VisitTimeColorStrategy(tile_visits, config, use_first=True)
+            return VisitTimeColorStrategy(tile_visits, config, styles, use_first=True)
         case "last":
-            return VisitTimeColorStrategy(tile_visits, config, use_first=False)
+            return VisitTimeColorStrategy(tile_visits, config, styles, use_first=False)
         case "visits":
             return NumVisitsColorStrategy(tile_visits, config)
         case "missing":
-            return MissingColorStrategy(tile_visits, config)
+            return MissingColorStrategy(tile_visits, styles)
         case "visited":
-            return VisitedColorStrategy(tile_visits, config)
+            return VisitedColorStrategy(tile_visits, styles)
         case "latest_new":
             activity_id = request.args.get(
                 "activity_id", type=int
             ) or get_latest_new_tiles_activity_id(zoom)
             if activity_id is None:
-                return ActivityHighlightColorStrategy(set(), set(), config)
+                return ActivityHighlightColorStrategy(set(), set(), styles)
             new_tiles, cluster_gained = _activity_highlight_tiles(
                 zoom, activity_id, get_cluster_history_latest_event_index(zoom)
             )
-            return ActivityHighlightColorStrategy(new_tiles, cluster_gained, config)
+            return ActivityHighlightColorStrategy(new_tiles, cluster_gained, styles)
         case "square_planner":
             return SquarePlannerColorStrategy(
                 tile_visits,
-                config,
+                styles,
                 int(request.args["x"]),
                 int(request.args["y"]),
                 int(request.args["size"]),
@@ -577,12 +665,13 @@ def render_inaccessible_tile_image(
     zoom: int, z: int, x: int, y: int, inaccessible_tiles: frozenset[tuple[int, int]]
 ) -> np.ndarray:
     result = np.zeros((OSM_TILE_SIZE, OSM_TILE_SIZE, 4), dtype=np.float32)
+    pattern = _styled(get_tile_style_specs(), TileStyleName.INACCESSIBLE)
     for sub_tile in _sub_tiles(zoom, z, x, y):
         if (sub_tile.tile_x, sub_tile.tile_y) in inaccessible_tiles:
             result[
                 sub_tile.y_start : sub_tile.y_start + sub_tile.width,
                 sub_tile.x_start : sub_tile.x_start + sub_tile.width,
-            ] = HATCHED_PATTERN.rasterize((sub_tile.width, sub_tile.width))
+            ] = pattern.rasterize((sub_tile.width, sub_tile.width))
     return result
 
 

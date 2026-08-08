@@ -680,21 +680,6 @@ class UiConfig(DB.Model):
     color_scheme_for_heatmap: Mapped[str] = mapped_column(
         sa.String, nullable=False, default="hot"
     )
-    color_strategy_max_cluster_color: Mapped[str] = mapped_column(
-        sa.String, nullable=False, default="#377eb84d"
-    )
-    color_strategy_max_cluster_other_color: Mapped[str] = mapped_column(
-        sa.String, nullable=False, default="#4daf4a4d"
-    )
-    color_strategy_visited_color: Mapped[str] = mapped_column(
-        sa.String, nullable=False, default="#0000004d"
-    )
-    color_strategy_new_tile_color: Mapped[str] = mapped_column(
-        sa.String, nullable=False, default="#ff7700ff", server_default="#ff7700ff"
-    )
-    color_strategy_new_cluster_color: Mapped[str] = mapped_column(
-        sa.String, nullable=False, default="#0066ffff", server_default="#0066ffff"
-    )
     color_strategy_cmap_opacity: Mapped[float] = mapped_column(
         sa.Float, nullable=False, default=0.5
     )

@@ -52,6 +52,7 @@ from ...webui.authenticator import Authenticator, needs_authentication
 from ...webui.columns import TIME_SERIES_COLUMNS
 from ..directory_import.importer import get_metadata_from_path
 from ..explorer.clustering import get_cluster_tile_diff_for_activity
+from ..explorer.model import TileStyleName, get_tile_styles
 
 logger = logging.getLogger(__name__)
 
@@ -149,6 +150,7 @@ def make_activity_blueprint(
     @blueprint.route("/<int:id>")
     def show(id: str) -> ResponseReturnValue:
         config = config_accessor.ui()
+        tile_styles = get_tile_styles()
         activity = repository.get_activity_by_id(id)
 
         time_series = repository.get_time_series(id)
@@ -209,8 +211,8 @@ def make_activity_blueprint(
             "new_tiles": new_tiles_per_zoom,
             "new_tile_stats": new_tile_stats,
             "new_tiles_bbox": new_tiles_bbox,
-            "new_tile_color": config.color_strategy_new_tile_color,
-            "new_cluster_color": config.color_strategy_new_cluster_color,
+            "new_tile_color": tile_styles[TileStyleName.NEW_TILE].border_color,
+            "new_cluster_color": tile_styles[TileStyleName.NEW_CLUSTER].border_color,
             "show_progress_markers": config.show_progress_markers,
         }
 

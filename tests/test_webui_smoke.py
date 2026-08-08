@@ -21,6 +21,10 @@ from geo_activity_playground.core.tile_visits import get_tile_history_df
 from geo_activity_playground.features.explorer.clustering import (
     rebuild_cluster_history_for_zoom,
 )
+from geo_activity_playground.features.explorer.model import (
+    TileStyleName,
+    get_tile_styles,
+)
 
 
 def test_home_page_loads(client):
@@ -453,31 +457,46 @@ def test_activity_page_shows_tile_changes(client, app):
     assert b"Newly discovered" in response.data
 
 
-def test_color_strategy_settings_round_trip(client, app):
-    response = client.get("/settings/color-strategy")
+def test_tile_rendering_settings_round_trip(client, app):
+    response = client.get("/settings/tile-rendering")
     assert response.status_code == 200
-    assert b"color_strategy_new_tile_color" in response.data
-    assert b"color_strategy_new_cluster_color" in response.data
+    assert b"new_tile_border_color" in response.data
+    assert b"inaccessible_stripe_color" in response.data
 
-    response = client.post(
-        "/settings/color-strategy",
-        data={
-            "color_strategy_max_cluster_color": "#377eb8",
-            "color_strategy_max_cluster_color_alpha": "77",
-            "color_strategy_max_cluster_other_color": "#4daf4a",
-            "color_strategy_max_cluster_other_color_alpha": "77",
-            "color_strategy_visited_color": "#000000",
-            "color_strategy_visited_color_alpha": "77",
-            "color_strategy_new_tile_color": "#ff0000",
-            "color_strategy_new_tile_color_alpha": "255",
-            "color_strategy_new_cluster_color": "#0066ff",
-            "color_strategy_new_cluster_color_alpha": "255",
-            "cmap_opacity": "0.5",
-        },
-        follow_redirects=True,
-    )
+    data = {"cmap_opacity": "0.5"}
+    for name in TileStyleName:
+        for element in ("fill", "border", "stripe"):
+            data[f"{name}_{element}_color"] = "#000000"
+            data[f"{name}_{element}_alpha"] = "77"
+        data[f"{name}_border_width"] = "6"
+        data[f"{name}_border_stroke"] = "solid"
+    data["new_tile_border_color"] = "#ff0000"
+    data["new_tile_border_alpha"] = "255"
+    data["new_tile_border_stroke"] = "dashed"
+    data["new_tile_border_width"] = "8"
+
+    response = client.post("/settings/tile-rendering", data=data, follow_redirects=True)
     assert response.status_code == 200
     with app.app_context():
-        from geo_activity_playground.core.datamodel import UiConfig
+        style = get_tile_styles()[TileStyleName.NEW_TILE]
+        assert style.border_color == "#ff0000ff"
+        assert style.border_stroke == "dashed"
+        assert style.border_width == 8
 
-        assert DB.session.get(UiConfig, 1).color_strategy_new_tile_color == "#ff0000ff"
+
+def test_tile_style_preview_renders_a_png(client):
+    response = client.get(
+        "/explorer/tile-style-preview.png",
+        query_string={
+            "fill_color": "#00000000",
+            "border_color": "#ff7700ff",
+            "stripe_color": "#80808099",
+            "border_width": "6",
+            "border_stroke": "dashed",
+        },
+    )
+    assert response.status_code == 200
+    assert response.mimetype == "image/png"
+
+    bad = client.get("/explorer/tile-style-preview.png?fill_color=nope")
+    assert bad.status_code == 400

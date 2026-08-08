@@ -1,0 +1,115 @@
+{% extends "settings/base.html.j2" %}
+
+{% block breadcrumbs %}
+<li class="breadcrumb-item active" aria-current="page">{{ _('Tile Rendering') }}</li>
+{% endblock %}
+
+{% block settings_content %}
+<h1 class="mb-3">{{ _('Tile Rendering') }}</h1>
+
+<p>{{ _('Each named tile is drawn with an optional fill, a border, and optional diagonal stripes. A tile that belongs to several categories at once shows one border per category, nested from the outside in. Setting the alpha channel to zero switches an element off.') }}</p>
+
+<form method="POST">
+    {% for entry in tile_styles %}
+    {% set name = entry.name %}
+    <div class="card mb-3">
+        <div class="card-body">
+            <div class="row g-3">
+                <div class="col-md-3">
+                    <h2 class="h5">{{ entry.label }}</h2>
+                    <img id="{{ name }}_preview" class="img-fluid border" width="128" height="128"
+                        alt="{{ _('Preview') }}" />
+                    <p class="mt-2 mb-0">
+                        <a href="#" data-reset="{{ name }}">{{ _('Reset to default') }}</a>
+                    </p>
+                </div>
+                <div class="col-md-9">
+                    <div class="row g-3">
+                        {% for element, label in [('fill', _('Fill color')), ('border', _('Border color')), ('stripe',
+                        _('Stripe color'))] %}
+                        <div class="col-md-4">
+                            <label for="{{ name }}_{{ element }}_color" class="form-label">{{ label }}</label>
+                            <input type="color" class="form-control" id="{{ name }}_{{ element }}_color"
+                                name="{{ name }}_{{ element }}_color" value="{{ entry.colors[element][0] }}"
+                                data-default="{{ entry.default_colors[element][0] }}" />
+                            <label for="{{ name }}_{{ element }}_alpha" class="form-label">{{ _('Alpha') }}</label>
+                            <input type="range" class="form-range" min="0" max="255" step="1"
+                                id="{{ name }}_{{ element }}_alpha" name="{{ name }}_{{ element }}_alpha"
+                                value="{{ entry.colors[element][1] }}"
+                                data-default="{{ entry.default_colors[element][1] }}" />
+                        </div>
+                        {% endfor %}
+
+                        <div class="col-md-4">
+                            <label for="{{ name }}_border_width" class="form-label">{{ _('Border stroke width') }}</label>
+                            <input type="number" class="form-control" min="0" max="64" step="1"
+                                id="{{ name }}_border_width" name="{{ name }}_border_width"
+                                value="{{ entry.style.border_width }}"
+                                data-default="{{ entry.defaults['border_width'] }}" />
+                        </div>
+                        <div class="col-md-4">
+                            <label for="{{ name }}_border_stroke" class="form-label">{{ _('Border stroke type') }}</label>
+                            <select class="form-select" id="{{ name }}_border_stroke" name="{{ name }}_border_stroke"
+                                data-default="{{ entry.defaults['border_stroke'] }}">
+                                {% for value, stroke_label in border_strokes %}
+                                <option value="{{ value }}" {% if entry.style.border_stroke == value %}selected{% endif
+                                    %}>{{ stroke_label }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+
+    <div class="mb-3">
+        <label for="cmap_opacity" class="form-label">{{ _('Color map opacity') }}</label>
+        <input type="number" class="form-control" id="cmap_opacity" name="cmap_opacity" value="{{ cmap_opacity }}"
+            min="0.0" max="1.0" step="0.05" />
+        <div class="form-text">{{ _('Opacity of the color strategies that compute a color from a color map, such as the colorful clusters or the visit count.') }}</div>
+    </div>
+
+    <button type="submit" class="btn btn-primary">{{ _('Save') }}</button>
+</form>
+
+<script>
+    const tileStyleNames = {{ tile_styles | map(attribute = 'name') | list | tojson }};
+
+    function updatePreview(name) {
+        const value = id => document.getElementById(`${name}_${id}`).value;
+        const color = element => value(`${element}_color`) +
+            parseInt(value(`${element}_alpha`)).toString(16).padStart(2, '0');
+        const params = new URLSearchParams({
+            fill_color: color('fill'),
+            border_color: color('border'),
+            stripe_color: color('stripe'),
+            border_width: value('border_width'),
+            border_stroke: value('border_stroke'),
+        });
+        document.getElementById(`${name}_preview`).src =
+            `{{ url_for('explorer.tile_style_preview') }}?${params}`;
+    }
+
+    for (const name of tileStyleNames) {
+        for (const suffix of ['fill_color', 'fill_alpha', 'border_color', 'border_alpha',
+            'stripe_color', 'stripe_alpha', 'border_width', 'border_stroke']) {
+            document.getElementById(`${name}_${suffix}`)
+                .addEventListener('input', () => updatePreview(name));
+        }
+        updatePreview(name);
+    }
+
+    for (const link of document.querySelectorAll('[data-reset]')) {
+        link.addEventListener('click', event => {
+            event.preventDefault();
+            const name = link.dataset.reset;
+            for (const field of document.querySelectorAll(`[id^="${name}_"][data-default]`)) {
+                field.value = field.dataset.default;
+            }
+            updatePreview(name);
+        });
+    }
+</script>
+{% endblock %}

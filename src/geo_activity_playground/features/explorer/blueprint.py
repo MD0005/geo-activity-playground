@@ -1,5 +1,6 @@
 import io
 import json
+import re
 from types import SimpleNamespace
 from typing import Any
 
@@ -64,13 +65,23 @@ from .clustering import (
 )
 from .garmin_img import build_garmin_img, mkgmap_available
 from .inaccessible import get_inaccessible_tiles
-from .model import ExplorerTileBookmark, InaccessibleTile
+from .model import (
+    TRANSPARENT,
+    BorderStroke,
+    ExplorerTileBookmark,
+    InaccessibleTile,
+)
 from .tile_rendering import (
+    TileStyleSpec,
     _render_tile_image,
     _resolve_color_strategy,
     _tile_bounds,
+    hex_color_to_tuple,
     render_inaccessible_tile_image,
+    render_tile_style_preview,
 )
+
+HEX_RGBA = re.compile(r"^#[0-9a-fA-F]{8}$")
 
 alt.data_transformers.enable("vegafusion")
 
@@ -439,6 +450,23 @@ def make_explorer_blueprint(
 
         result = _render_tile_image(zoom, z, x, y, color_strategy, evolution_state)
         return _png_response(result)
+
+    @blueprint.route("/tile-style-preview.png")
+    def tile_style_preview() -> ResponseReturnValue:
+        colors = {
+            key: request.args.get(key, TRANSPARENT)
+            for key in ("fill_color", "border_color", "stripe_color")
+        }
+        if not all(HEX_RGBA.match(color) for color in colors.values()):
+            abort(400)
+        spec = TileStyleSpec(
+            fill_color=hex_color_to_tuple(colors["fill_color"]),
+            border_color=hex_color_to_tuple(colors["border_color"]),
+            border_width=request.args.get("border_width", 0, type=int),
+            border_dashed=request.args.get("border_stroke") == BorderStroke.DASHED,
+            stripe_color=hex_color_to_tuple(colors["stripe_color"]),
+        )
+        return _png_response(render_tile_style_preview([spec]))
 
     @blueprint.route("/<int:zoom>/inaccessible-tile/<int:z>/<int:x>/<int:y>.png")
     def inaccessible_tile(zoom: int, z: int, x: int, y: int) -> ResponseReturnValue:
