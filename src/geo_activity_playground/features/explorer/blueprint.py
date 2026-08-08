@@ -40,12 +40,8 @@ from ...core.grid import (
 )
 from ...core.meta_search import (
     activity_ids_for_search,
-    get_stored_queries,
     is_search_active,
     parse_search_params,
-    primitives_to_jinja,
-    primitives_to_url_str,
-    register_search_query,
 )
 from ...core.raster_map import ImageTransform, TileGetter
 from ...core.tile_visits import (
@@ -57,6 +53,7 @@ from ...core.tile_visits import (
 )
 from ...core.tiles import compute_tile, get_tile_upper_left_lat_lon
 from ...webui.authenticator import Authenticator, needs_authentication
+from ...webui.search_context import search_context
 from .clustering import (
     compute_current_state_for_zoom,
     compute_tile_evolution,
@@ -323,10 +320,8 @@ def make_explorer_blueprint(
         if zoom not in config_accessor.ui().explorer_zoom_levels:
             return {"zoom_level_not_generated": zoom}
 
-        primitives = parse_search_params(request.args)
+        primitives, search_vars = search_context(authenticator)
         search_active = is_search_active(primitives)
-        if search_active and authenticator.is_authenticated():
-            register_search_query(primitives)
 
         # Get data from database
         medians = get_tile_medians(zoom)
@@ -377,7 +372,6 @@ def make_explorer_blueprint(
                 }
             )
 
-        stored_queries = get_stored_queries()
         context = {
             "center": {
                 "latitude": median_lat,
@@ -392,14 +386,7 @@ def make_explorer_blueprint(
             },
             "history_stale": is_cluster_history_stale(zoom),
             "search_active": search_active,
-            "extra_args": primitives_to_url_str(primitives),
-            "query": primitives_to_jinja(primitives),
-            "search_query_favorites": [
-                (str(q), q.to_url_str()) for q in stored_queries if q.is_favorite
-            ],
-            "search_query_last": [
-                (str(q), q.to_url_str()) for q in stored_queries if not q.is_favorite
-            ],
+            **search_vars,
             "zoom": zoom,
             "num_tiles": num_tiles,
             "num_cluster_tiles": num_cluster_tiles,

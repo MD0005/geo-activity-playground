@@ -78,7 +78,7 @@
                 zoomLevels: {{ explorer_zoom_levels | tojson }},
                 attribution: '{{ map_tile_attribution|safe }}',
                 bbox: {{ center.bbox | safe }},
-                searchQuery: '{{ extra_args|safe }}' || null
+                searchQuery: '{{ base_query_str|safe }}' || null
             });
         </script>
     </div>

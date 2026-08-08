@@ -8,15 +8,10 @@ from flask.typing import ResponseReturnValue
 from flask_babel import gettext as _
 
 from ...core.activities import ActivityRepository
-from ...core.meta_search import (
-    apply_search_filter,
-    get_stored_queries,
-    parse_search_params,
-    primitives_to_jinja,
-    register_search_query,
-)
+from ...core.meta_search import apply_search_filter
 from ...webui.authenticator import Authenticator
 from ...webui.columns import ColumnDescription, column_distance, column_elevation_gain
+from ...webui.search_context import search_context
 
 
 def register_eddington_blueprint(
@@ -59,10 +54,7 @@ def _render_eddington_template(
     display_name = str(column.display_name)
     divisor = int(request.args.get("eddington_divisor") or divisor_values_avail[0])
 
-    primitives = parse_search_params(request.args)
-
-    if authenticator.is_authenticated():
-        register_search_query(primitives)
+    primitives, search_vars = search_context(authenticator)
 
     activities = (
         apply_search_filter(primitives)
@@ -80,14 +72,6 @@ def _render_eddington_template(
     en_per_week, eddington_df_per_week = _get_values_per_group(
         activities.groupby(["iso_year", "week"]), column_name, divisor
     )
-
-    stored_queries = get_stored_queries()
-    search_query_favorites = [
-        (str(q), q.to_url_str()) for q in stored_queries if q.is_favorite
-    ]
-    search_query_last = [
-        (str(q), q.to_url_str()) for q in stored_queries if not q.is_favorite
-    ]
 
     return render_template(
         "eddington/index.html.j2",
@@ -117,9 +101,7 @@ def _render_eddington_template(
             & (eddington_df_per_week[column_name] <= en_per_week + 10 * divisor)
             & (eddington_df_per_week[column_name] % divisor == 0)
         ].to_dict(orient="records"),
-        query=primitives_to_jinja(primitives),
-        search_query_favorites=search_query_favorites,
-        search_query_last=search_query_last,
+        **search_vars,
         yearly_eddington=_get_yearly_eddington(activities, column_name, divisor),
         eddington_number_history_plot=_get_eddington_number_history(
             activities, column_name, divisor

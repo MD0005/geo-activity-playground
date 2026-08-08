@@ -3,23 +3,18 @@ import datetime
 import altair as alt
 import pandas as pd
 import sqlalchemy
-from flask import Blueprint, render_template, request
+from flask import Blueprint, render_template
 from flask_babel import gettext as _
 
 from ...core.activities import ActivityRepository
 from ...core.config import ConfigAccessor
 from ...core.datamodel import DB
-from ...core.meta_search import (
-    apply_search_filter,
-    get_stored_queries,
-    parse_search_params,
-    primitives_to_jinja,
-    register_search_query,
-)
+from ...core.meta_search import apply_search_filter
 from ...features.plot_builder.analysis import make_parametric_plot
 from ...features.plot_builder.model import PlotSpec
 from ...webui.authenticator import Authenticator
 from ...webui.columns import META_COLUMNS, ColumnDescription
+from ...webui.search_context import search_context
 
 
 def plot_per_year_per_kind(df: pd.DataFrame, column: ColumnDescription) -> str:
@@ -182,28 +177,15 @@ def make_summary_blueprint(
 
     @blueprint.route("/")
     def index():
-        primitives = parse_search_params(request.args)
-
-        if authenticator.is_authenticated():
-            register_search_query(primitives)
+        primitives, search_vars = search_context(authenticator)
 
         df = apply_search_filter(primitives)
 
         df_without_nan = df.loc[~pd.isna(df["start_local"])]
 
-        stored_queries = get_stored_queries()
-        search_query_favorites = [
-            (str(q), q.to_url_str()) for q in stored_queries if q.is_favorite
-        ]
-        search_query_last = [
-            (str(q), q.to_url_str()) for q in stored_queries if not q.is_favorite
-        ]
-
         return render_template(
             "summary/index.html.j2",
-            query=primitives_to_jinja(primitives),
-            search_query_favorites=search_query_favorites,
-            search_query_last=search_query_last,
+            **search_vars,
             custom_plots=[
                 (spec, make_parametric_plot(repository.meta, spec))
                 for spec in DB.session.scalars(sqlalchemy.select(PlotSpec)).all()

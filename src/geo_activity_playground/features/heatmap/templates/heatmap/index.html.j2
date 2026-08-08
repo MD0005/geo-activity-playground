@@ -27,7 +27,7 @@
                 attribution: '{{ map_tile_attribution|safe }}',
                 baseLayer: 'Inverse Grayscale',
                 overlay: 'Heatmap',
-                searchQuery: '{{ extra_args|safe }}' || null
+                searchQuery: '{{ base_query_str|safe }}' || null
             });
 
             const bbox = {{ center.bbox | safe }};
@@ -39,7 +39,7 @@
                 e.preventDefault();
                 const bounds = map.getBounds();
                 window.location.href =
-                    `/heatmap/download/${bounds.getNorth()}/${bounds.getEast()}/${bounds.getSouth()}/${bounds.getWest()}/heatmap.png?{{ extra_args|safe }}`;
+                    `/heatmap/download/${bounds.getNorth()}/${bounds.getEast()}/${bounds.getSouth()}/${bounds.getWest()}/heatmap.png?{{ base_query_str|safe }}`;
             });
         </script>
     </div>

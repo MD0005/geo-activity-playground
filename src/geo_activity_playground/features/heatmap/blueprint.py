@@ -20,13 +20,9 @@ from ...core.datamodel import DB, StoredSearchQuery, UiConfig
 from ...core.grid import geojson_bounding_box_for_tile_collection
 from ...core.meta_search import (
     apply_search_filter,
-    get_stored_queries,
     is_search_active,
     parse_search_params,
-    primitives_to_jinja,
     primitives_to_json,
-    primitives_to_url_str,
-    register_search_query,
 )
 from ...core.raster_map import (
     OSM_TILE_SIZE,
@@ -41,6 +37,7 @@ from ...core.tile_visits import (
 from ...core.tiles import get_tile_upper_left_lat_lon
 from ...webui.authenticator import Authenticator, needs_authentication
 from ...webui.flasher import Flasher, FlashTypes
+from ...webui.search_context import search_context
 from ..explorer.clustering import get_biggest_cluster_members
 from .cache import (
     blob_to_counts,
@@ -72,10 +69,7 @@ def make_heatmap_blueprint(
 
     @blueprint.route("/")
     def index():
-        primitives = parse_search_params(request.args)
-
-        if authenticator.is_authenticated():
-            register_search_query(primitives)
+        primitives, search_vars = search_context(authenticator)
 
         zoom = 14
         medians = get_tile_medians(zoom)
@@ -83,14 +77,6 @@ def make_heatmap_blueprint(
             medians[0], medians[1], zoom
         )
         biggest_cluster_members = get_biggest_cluster_members(zoom)
-
-        stored_queries = get_stored_queries()
-        search_query_favorites = [
-            (str(q), q.to_url_str()) for q in stored_queries if q.is_favorite
-        ]
-        search_query_last = [
-            (str(q), q.to_url_str()) for q in stored_queries if not q.is_favorite
-        ]
 
         context = {
             "center": {
@@ -104,10 +90,7 @@ def make_heatmap_blueprint(
                     else {}
                 ),
             },
-            "extra_args": primitives_to_url_str(primitives),
-            "query": primitives_to_jinja(primitives),
-            "search_query_favorites": search_query_favorites,
-            "search_query_last": search_query_last,
+            **search_vars,
         }
 
         return render_template("heatmap/index.html.j2", **context)
