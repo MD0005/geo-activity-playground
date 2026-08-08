@@ -224,9 +224,13 @@ function setupInaccessibleLinks(map, zoom) {
                 popup.setContent(text);
             }
 
+            // A plain redraw() re-requests the same URLs, which the browser may
+            // serve from its memory cache; a fresh version parameter forces it
+            // to actually fetch the changed tiles.
             map.eachLayer(layer => {
                 if (layer._url?.includes('/inaccessible-tile/')) {
-                    layer.redraw();
+                    const base = layer._url.split('?')[0];
+                    layer.setUrl(`${base}?v=${Date.now()}`);
                 }
             });
         } catch (error) {

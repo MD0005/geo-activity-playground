@@ -26,6 +26,9 @@ Changed:
 
 - Enable “Mapterhorn Hillshade” overlay by default. ([GH-489](https://github.com/martin-ueding/geo-activity-playground/issues/489))
 
+Fixed:
+
+- Marking a tile as inaccessible updates the “Inaccessible Tiles” layer right away. ([GH-478](https://github.com/martin-ueding/geo-activity-playground/issues/478))
 
 ## Version 1.46.0 — 2026-08-03
 
