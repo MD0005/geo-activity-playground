@@ -7,7 +7,7 @@
  * @param {number[]} [config.zoomLevels] - All enabled explorer zoom levels to offer in the layer control (defaults to [zoom])
  * @param {string} config.attribution - Map tile attribution text
  * @param {string} [config.baseLayer='Grayscale'] - Default base layer name
- * @param {string|string[]|null} [config.overlay=['Colorful Cluster', 'Inaccessible Tiles']] - Default overlay strategy or strategies, or null for no overlay
+ * @param {string|string[]|null} [config.overlay=['Colorful Cluster', 'Inaccessible Tiles']] - Default overlay strategy or strategies, or null for no overlay; the Mapterhorn hillshade is always added on top of these
  * @param {string[]} [config.ensureOverlays] - Overlays that are added once to already saved preferences, for layers introduced after the user saved them
  * @param {number} [config.activityId] - Activity to highlight in the activity-highlight layer (defaults to the latest one server-side)
  * @param {Object} [config.squarePlanner] - Square planner config (optional)
@@ -72,6 +72,7 @@ export function add_layers_to_map(map, config) {
         heatmap_url += `?${heatmapExtraArgs}`;
     }
 
+    const hillshadeName = "Mapterhorn Hillshade";
     const mapterhornPaneName = "mapterhorn-hillshade";
     if (!map.getPane(mapterhornPaneName)) {
         const pane = map.createPane(mapterhornPaneName);
@@ -110,7 +111,7 @@ export function add_layers_to_map(map, config) {
     const labelFor = (name, z) => zoomLevels.length > 1 ? `Explorer ${z} ${name}` : name;
 
     const overlay_maps = {
-        "Mapterhorn Hillshade": (L.gridLayer && L.gridLayer.relief)
+        [hillshadeName]: (L.gridLayer && L.gridLayer.relief)
             ? L.gridLayer.relief({
                 mode: "hillshade",
                 tileSize: 256,
@@ -148,8 +149,13 @@ export function add_layers_to_map(map, config) {
     });
 
     // Resolve the default overlay strategies to concrete entries at the primary zoom.
-    let selectedOverlay = (overlay === null ? [] : [].concat(overlay))
-        .map(name => explorerNames.has(name) ? labelFor(name, zoom) : name);
+    // The hillshade is on by default everywhere; it only shades the base map and does
+    // not compete with the other overlays.
+    let selectedOverlay = [
+        hillshadeName,
+        ...(overlay === null ? [] : [].concat(overlay))
+            .map(name => explorerNames.has(name) ? labelFor(name, zoom) : name)
+    ];
 
     if (squarePlanner) {
         const { x, y, size } = squarePlanner;
@@ -157,7 +163,7 @@ export function add_layers_to_map(map, config) {
             `/explorer/${zoom}/tile/{z}/{x}/{y}.png?color_strategy=square_planner&x=${x}&y=${y}&size=${size}`,
             { maxZoom: 19, attribution }
         );
-        selectedOverlay = ["Square Planner"];
+        selectedOverlay = [hillshadeName, "Square Planner"];
     }
 
     // Use saved preferences if valid, otherwise fall back to defaults
@@ -180,7 +186,8 @@ export function add_layers_to_map(map, config) {
     // switched on once. Remembering which ones were already offered keeps them off
     // again once the user turns them off deliberately.
     const alreadyEnsured = new Set(Array.isArray(saved.ensured) ? saved.ensured : []);
-    const newlyEnsured = ensureOverlays.filter(name => !alreadyEnsured.has(name));
+    const newlyEnsured = [hillshadeName, ...ensureOverlays]
+        .filter(name => !alreadyEnsured.has(name));
 
     let selectedOverlays;
     if (squarePlanner) {
