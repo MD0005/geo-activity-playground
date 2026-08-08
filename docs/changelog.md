@@ -38,6 +38,7 @@ Fixed:
 - The cluster size evolution plot includes the moment the first cluster tile appeared, which was previously omitted. ([GH-481](https://github.com/martin-ueding/geo-activity-playground/issues/481))
 - Marking a tile as inaccessible updates the “Inaccessible Tiles” layer right away. ([GH-478](https://github.com/martin-ueding/geo-activity-playground/issues/478))
 - The “Mapterhorn Hillshade” overlay is upscaled above zoom level 17 instead of vanishing. ([GH-475](https://github.com/martin-ueding/geo-activity-playground/issues/475))
+- The aggregate map on “Activities Overview & Search (Map)” left out tracks. Activities recorded in several segments used up a separate line budget, so the map stopped short of the promised 100 activities, and it drew the oldest activities instead of the latest ones.
 
 ## Version 1.46.0 — 2026-08-03
 
