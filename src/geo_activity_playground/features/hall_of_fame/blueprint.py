@@ -4,8 +4,9 @@ import logging
 import pandas as pd
 from flask import Blueprint, render_template
 
-from ...core.activities import ActivityRepository, make_geojson_from_time_series
+from ...core.activities import make_geojson_from_time_series
 from ...core.config import ConfigAccessor
+from ...core.datamodel import get_activity_by_id, get_time_series
 from ...core.meta_search import apply_search_filter
 from ...webui.authenticator import Authenticator
 from ...webui.search_context import search_context
@@ -14,7 +15,6 @@ logger = logging.getLogger(__name__)
 
 
 def make_hall_of_fame_blueprint(
-    repository: ActivityRepository,
     authenticator: Authenticator,
     config_accessor: ConfigAccessor,
 ) -> Blueprint:
@@ -34,10 +34,10 @@ def make_hall_of_fame_blueprint(
             "hall_of_fame/index.html.j2",
             nominations=[
                 (
-                    repository.get_activity_by_id(activity_id),
+                    get_activity_by_id(activity_id),
                     reasons,
                     make_geojson_from_time_series(
-                        repository.get_time_series(activity_id),
+                        get_time_series(activity_id),
                         config.eighth_marker_min_distance_km,
                     ),
                 )

@@ -4,15 +4,16 @@ from flask import Blueprint, render_template, url_for
 from flask.typing import ResponseReturnValue
 from flask_babel import gettext as _
 
+from ...core.datamodel import query_activity_meta
 from ...webui.columns import ColumnDescription, column_distance, column_elevation_gain
 
 
-def make_bubble_chart_blueprint(repository) -> Blueprint:
+def make_bubble_chart_blueprint() -> Blueprint:
     blueprint = Blueprint("bubble_chart", __name__, template_folder="templates")
 
     @blueprint.route("/", endpoint="index")
     def bubble_chart() -> ResponseReturnValue:
-        activities = repository.meta.copy()
+        activities = query_activity_meta()
 
         if "id" not in activities.columns:
             activities["id"] = activities.index

@@ -6,9 +6,8 @@ import sqlalchemy
 from flask import Blueprint, render_template
 from flask_babel import gettext as _
 
-from ...core.activities import ActivityRepository
 from ...core.config import ConfigAccessor
-from ...core.datamodel import DB
+from ...core.datamodel import DB, query_activity_meta
 from ...core.meta_search import apply_search_filter
 from ...features.plot_builder.analysis import make_parametric_plot
 from ...features.plot_builder.model import PlotSpec
@@ -169,7 +168,6 @@ def _filter_past_year(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def make_summary_blueprint(
-    repository: ActivityRepository,
     config_accessor: ConfigAccessor,
     authenticator: Authenticator,
 ) -> Blueprint:
@@ -187,7 +185,7 @@ def make_summary_blueprint(
             "summary/index.html.j2",
             **search_vars,
             custom_plots=[
-                (spec, make_parametric_plot(repository.meta, spec))
+                (spec, make_parametric_plot(query_activity_meta(), spec))
                 for spec in DB.session.scalars(sqlalchemy.select(PlotSpec)).all()
             ],
             plot_per_year_per_kind={

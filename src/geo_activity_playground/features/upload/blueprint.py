@@ -12,7 +12,6 @@ from flask import (
 )
 from flask_babel import gettext as _
 
-from ...core.activities import ActivityRepository
 from ...core.config import ConfigAccessor
 from ...core.datamodel import DB, Activity
 from ...core.scan import scan_for_activities
@@ -46,7 +45,6 @@ def _store_under_content_hash(file, target_path: pathlib.Path) -> pathlib.Path |
 
 
 def make_upload_blueprint(
-    repository: ActivityRepository,
     config_accessor: ConfigAccessor,
     authenticator: Authenticator,
     flasher: Flasher,
@@ -112,7 +110,6 @@ def make_upload_blueprint(
             saved_paths.append(str(target_path))
 
         scan_for_activities(
-            repository,
             config_accessor,
             skip_strava=True,
             skip_hammerhead=True,
@@ -147,7 +144,7 @@ def make_upload_blueprint(
     @blueprint.route("/execute-reload", methods=["POST"])
     @needs_authentication(authenticator)
     def execute_reload():
-        scan_for_activities(repository, config_accessor)
+        scan_for_activities(config_accessor)
         flasher.flash_message(_("Scanned for new activities."), FlashTypes.SUCCESS)
         return redirect(url_for("index"))
 

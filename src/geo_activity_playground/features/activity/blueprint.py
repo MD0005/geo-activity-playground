@@ -22,7 +22,6 @@ from flask.typing import ResponseReturnValue
 from flask_babel import gettext as _
 
 from ...core.activities import (
-    ActivityRepository,
     make_geojson_from_time_series,
     make_geojson_line_segments_with_columns,
     make_geojson_progress_markers_from_time_series,
@@ -36,8 +35,12 @@ from ...core.datamodel import (
     Equipment,
     Kind,
     Tag,
+    get_activity_by_id,
     get_or_make_equipment,
     get_or_make_kind,
+    get_time_series,
+    iter_activities,
+    query_activity_meta,
 )
 from ...core.enrichment import update_and_commit
 from ...core.grid import geojson_bounding_box_for_tile_collection
@@ -106,7 +109,6 @@ def metadata_candidates(
 
 
 def make_activity_blueprint(
-    repository: ActivityRepository,
     authenticator: Authenticator,
     config_accessor: ConfigAccessor,
     heart_rate_zone_computer: HeartRateZoneComputer,
@@ -127,9 +129,9 @@ def make_activity_blueprint(
                                     group["latitude"], group["longitude"]
                                 )
                             ]
-                            for _, group in repository.get_time_series(
-                                activity.id
-                            ).groupby("segment_id")
+                            for _, group in get_time_series(activity.id).groupby(
+                                "segment_id"
+                            )
                         ]
                     ),
                     properties={
@@ -138,7 +140,7 @@ def make_activity_blueprint(
                         "activity_id": str(activity.id),
                     },
                 )
-                for i, activity in enumerate(repository.iter_activities())
+                for i, activity in enumerate(iter_activities())
             ]
         )
 
@@ -151,14 +153,14 @@ def make_activity_blueprint(
     def show(id: str) -> ResponseReturnValue:
         config = config_accessor.ui()
         tile_styles = get_tile_styles()
-        activity = repository.get_activity_by_id(id)
+        activity = get_activity_by_id(id)
 
-        time_series = repository.get_time_series(id)
+        time_series = get_time_series(id)
         line_json = make_geojson_from_time_series(
             time_series, config.eighth_marker_min_distance_km
         )
 
-        meta = repository.meta
+        meta = query_activity_meta()
         similar_activities = meta.loc[
             (meta.name == activity.name) & (meta.id != activity.id)
         ]
@@ -288,13 +290,12 @@ def make_activity_blueprint(
 
     @blueprint.route("/name/<name>")
     def name(name: str) -> ResponseReturnValue:
-        meta = repository.meta
+        meta = query_activity_meta()
         selection = meta["name"] == name
         activities_with_name = meta.loc[selection]
 
         time_series = [
-            repository.get_time_series(activity_id)
-            for activity_id in activities_with_name["id"]
+            get_time_series(activity_id) for activity_id in activities_with_name["id"]
         ]
 
         cmap = matplotlib.colormaps["Dark2"]

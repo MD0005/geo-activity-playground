@@ -10,8 +10,15 @@ import pandas as pd
 import sqlalchemy as sa
 from tqdm import tqdm
 
-from .activities import ActivityRepository
-from .datamodel import DB, Activity, ActivityTile, TileVisit
+from .datamodel import (
+    DB,
+    Activity,
+    ActivityTile,
+    TileVisit,
+    get_activity_by_id,
+    get_activity_ids,
+    get_time_series,
+)
 from .tiles import interpolate_missing_tile
 
 logger = logging.getLogger(__name__)
@@ -142,8 +149,8 @@ def remove_activity_from_tile_state(activity_id: int) -> int:
     return removed_references
 
 
-def _consistency_check(repository: ActivityRepository) -> bool:
-    present_activity_ids = set(repository.get_activity_ids())
+def _consistency_check() -> bool:
+    present_activity_ids = set(get_activity_ids())
 
     activity_tile_count = DB.session.query(ActivityTile).limit(1).count()
     tile_visit_count = DB.session.query(TileVisit).limit(1).count()
@@ -351,21 +358,20 @@ def get_explorer_activity_ids() -> set[int] | None:
     )
 
 
-def compute_tile_visits_new(repository: ActivityRepository) -> None:
-    if not _consistency_check(repository):
+def compute_tile_visits_new() -> None:
+    if not _consistency_check():
         logger.warning("Need to recompute Explorer Tiles.")
         _reset_tile_visits_db()
 
     processed_ids = _processed_activity_ids()
     unprocessed_ids = [
         activity_id
-        for activity_id in repository.get_activity_ids()
+        for activity_id in get_activity_ids()
         if activity_id not in processed_ids
     ]
     explorer_ids = get_explorer_activity_ids()
     for activity_id in tqdm(unprocessed_ids, desc="Tile visits", delay=1):
         _process_activity(
-            repository,
             activity_id,
             counts_for_explorer=explorer_ids is None or activity_id in explorer_ids,
         )
@@ -429,11 +435,9 @@ def rebuild_tile_visits_from_activity_tiles() -> None:
     logger.info(f"Rebuilt {len(batch)} tile visits from activity tiles.")
 
 
-def _process_activity(
-    repository: ActivityRepository, activity_id: int, counts_for_explorer: bool = True
-) -> None:
-    activity = repository.get_activity_by_id(activity_id)
-    time_series = repository.get_time_series(activity_id)
+def _process_activity(activity_id: int, counts_for_explorer: bool = True) -> None:
+    activity = get_activity_by_id(activity_id)
+    time_series = get_time_series(activity_id)
     fallback_time = _fallback_timestamp_for_activity(activity)
 
     activity_tile_rows: list[ActivityTile] = []

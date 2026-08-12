@@ -20,7 +20,6 @@ from flask import (
 from flask_babel import gettext as _
 from tqdm import tqdm
 
-from ...core.activities import ActivityRepository
 from ...core.config import ConfigAccessor
 from ...core.currency import format_money
 from ...core.datamodel import (
@@ -257,7 +256,6 @@ def make_settings_blueprint(
     config_accessor: ConfigAccessor,
     authenticator: Authenticator,
     flasher: Flasher,
-    repository: ActivityRepository,
 ) -> Blueprint:
     blueprint = Blueprint("settings", __name__, template_folder="templates")
     register_directory_import_settings(
@@ -324,7 +322,7 @@ def make_settings_blueprint(
             if action == "reset_tile_visit_state":
                 logger.info("User requested reset of tile visit state.")
                 _reset_tile_visits_db()
-                compute_tile_visits_new(repository)
+                compute_tile_visits_new()
                 compute_tile_evolution(config_accessor.ui())
                 flasher.flash_message(
                     _("Tile visit state has been reset and re-indexed."),

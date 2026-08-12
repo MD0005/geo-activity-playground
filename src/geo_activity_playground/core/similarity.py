@@ -6,8 +6,8 @@ import pandas as pd
 from PIL import Image, ImageDraw
 from tqdm import tqdm
 
-from .activities import ActivityRepository
 from .coordinates import get_distance
+from .datamodel import get_activity_ids, get_time_series
 from .tasks import stored_object
 
 fingerprint_path = pathlib.Path("Cache/activity_fingerprints.pickle")
@@ -22,12 +22,12 @@ def add_distance(distances, this, other, distance) -> None:
     distances[this][distance].add(other)
 
 
-def precompute_activity_distances(repository: ActivityRepository) -> None:
+def precompute_activity_distances() -> None:
     with (
         stored_object(fingerprint_path, {}) as fingerprints,
         stored_object(distances_path, {}) as distances,
     ):
-        activity_ids = repository.get_activity_ids()
+        activity_ids = get_activity_ids()
 
         activity_ids_without_fingerprint = [
             activity_id
@@ -37,7 +37,7 @@ def precompute_activity_distances(repository: ActivityRepository) -> None:
         for activity_id in tqdm(
             activity_ids_without_fingerprint, desc="Compute activity fingerprints"
         ):
-            ts = repository.get_time_series(activity_id)
+            ts = get_time_series(activity_id)
             ts_hash = _compute_image_hash(ts)
             fingerprints[activity_id] = ts_hash
 

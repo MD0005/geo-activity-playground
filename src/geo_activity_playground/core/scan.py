@@ -7,9 +7,8 @@ from ..features.hammerhead.source import HammerheadActivitySource
 from ..features.segments.matching import find_matches
 from ..features.segments.model import Segment
 from ..features.strava.source import StravaActivitySource
-from .activities import ActivityRepository
 from .config import ConfigAccessor
-from .datamodel import DB
+from .datamodel import DB, count_activities
 from .sources import ActivitySource, DirectoryImportSource
 from .tile_visits import compute_tile_visits_new
 
@@ -21,7 +20,6 @@ _ACTIVITY_SOURCES: list[ActivitySource] = [
 
 
 def scan_for_activities(
-    repository: ActivityRepository,
     config_accessor: ConfigAccessor,
     strava_begin: str | None = None,
     strava_end: str | None = None,
@@ -52,8 +50,8 @@ def scan_for_activities(
 
     import_photos_from_directory()
 
-    if len(repository) > 0:
-        compute_tile_visits_new(repository)
+    if count_activities() > 0:
+        compute_tile_visits_new()
         compute_tile_evolution(config_accessor.ui())
         # New activity tiles invalidate every cached filtered state.
         delete_outdated_filtered_cluster_cache()

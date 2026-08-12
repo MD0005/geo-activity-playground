@@ -7,7 +7,6 @@ from flask import Blueprint, Request, render_template, request
 from flask.typing import ResponseReturnValue
 from flask_babel import gettext as _
 
-from ...core.activities import ActivityRepository
 from ...core.meta_search import apply_search_filter
 from ...webui.authenticator import Authenticator
 from ...webui.columns import ColumnDescription, column_distance, column_elevation_gain
@@ -15,7 +14,6 @@ from ...webui.search_context import search_context
 
 
 def register_eddington_blueprint(
-    repository: ActivityRepository,
     authenticator: Authenticator,
 ) -> Blueprint:
     blueprint = Blueprint("eddington", __name__, template_folder="templates")
@@ -23,7 +21,6 @@ def register_eddington_blueprint(
     @blueprint.route("/")
     def distance() -> ResponseReturnValue:
         return _render_eddington_template(
-            repository,
             request,
             authenticator,
             column_distance,
@@ -33,7 +30,6 @@ def register_eddington_blueprint(
     @blueprint.route("/elevation_gain")
     def elevation_gain() -> ResponseReturnValue:
         return _render_eddington_template(
-            repository,
             request,
             authenticator,
             column_elevation_gain,
@@ -44,7 +40,6 @@ def register_eddington_blueprint(
 
 
 def _render_eddington_template(
-    repository: ActivityRepository,
     request: Request,
     authenticator: Authenticator,
     column: ColumnDescription,

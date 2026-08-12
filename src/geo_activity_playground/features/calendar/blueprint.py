@@ -12,9 +12,14 @@ from flask import Blueprint, redirect, render_template, url_for
 from flask.typing import ResponseReturnValue
 from flask_babel import gettext as _
 
-from ...core.activities import ActivityRepository
 from ...core.config import ConfigAccessor
-from ...core.datamodel import DB, Activity, TileVisit
+from ...core.datamodel import (
+    DB,
+    Activity,
+    TileVisit,
+    get_time_series,
+    query_activity_meta,
+)
 from ..explorer.clustering import (
     get_cluster_tile_activations_df,
     get_square_history_df,
@@ -22,8 +27,8 @@ from ..explorer.clustering import (
 )
 
 
-def _meta_with_local_start(repository: ActivityRepository) -> pd.DataFrame:
-    meta = repository.meta
+def _meta_with_local_start() -> pd.DataFrame:
+    meta = query_activity_meta()
     if len(meta) == 0:
         return pd.DataFrame(
             columns=[
@@ -348,7 +353,6 @@ def _square_size_at(square_history: pd.DataFrame, checkpoints: pd.Series) -> pd.
 
 
 def make_calendar_blueprint(
-    repository: ActivityRepository,
     config_accessor: ConfigAccessor,
 ) -> Blueprint:
     blueprint = Blueprint("calendar", __name__, template_folder="templates")
@@ -389,7 +393,7 @@ def make_calendar_blueprint(
 
     @blueprint.route("/<int:year>/<int:month>")
     def month(year: int, month: int) -> ResponseReturnValue:
-        meta = repository.meta
+        meta = query_activity_meta()
 
         filtered = meta.loc[
             (meta["year"] == year) & (meta["month"] == month)
@@ -426,13 +430,12 @@ def make_calendar_blueprint(
 
     @blueprint.route("/day/<int:year>/<int:month>/<int:day>")
     def day(year: int, month: int, day: int) -> ResponseReturnValue:
-        meta = repository.meta
+        meta = query_activity_meta()
         selection = meta["start_local"].dt.date == datetime.date(year, month, day)
         activities_that_day = meta.loc[selection]
 
         time_series = [
-            repository.get_time_series(activity_id)
-            for activity_id in activities_that_day["id"]
+            get_time_series(activity_id) for activity_id in activities_that_day["id"]
         ]
 
         cmap = matplotlib.colormaps["Dark2"]
@@ -477,7 +480,7 @@ def make_calendar_blueprint(
 
     @blueprint.route("/wrap")
     def wrap_latest() -> ResponseReturnValue:
-        meta = _meta_with_local_start(repository)
+        meta = _meta_with_local_start()
         if len(meta) == 0:
             return render_template(
                 "calendar/wrap-year.html.j2",
@@ -500,7 +503,7 @@ def make_calendar_blueprint(
 
     @blueprint.route("/wrap/<int:year>")
     def wrap_year(year: int) -> ResponseReturnValue:
-        meta = _meta_with_local_start(repository)
+        meta = _meta_with_local_start()
         years = sorted({int(y) for y in meta["year"].dropna().unique()})
         if year not in years:
             if len(years) == 0:
@@ -634,7 +637,7 @@ def make_calendar_blueprint(
 
     @blueprint.route("/wrap/<int:year>/<int:month>")
     def wrap_month(year: int, month: int) -> ResponseReturnValue:
-        meta = _meta_with_local_start(repository)
+        meta = _meta_with_local_start()
         months = sorted(
             {
                 (int(row["year"]), int(row["month"]))

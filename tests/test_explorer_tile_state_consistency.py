@@ -2,13 +2,13 @@ import datetime as dt
 import json
 import random
 import time
+import uuid
 from types import SimpleNamespace
 
 import pandas as pd
 import sqlalchemy as sa
 
 import geo_activity_playground.features.explorer.filtered as filtered_module
-from geo_activity_playground.core.activities import ActivityRepository
 from geo_activity_playground.core.config import ConfigAccessor
 from geo_activity_playground.core.coordinates import Bounds
 from geo_activity_playground.core.datamodel import (
@@ -17,6 +17,7 @@ from geo_activity_playground.core.datamodel import (
     ActivityTile,
     Kind,
     TileVisit,
+    get_activity_ids,
 )
 from geo_activity_playground.core.raster_map import OSM_TILE_SIZE
 from geo_activity_playground.core.tile_visits import (
@@ -138,71 +139,59 @@ def test_remove_activity_from_tile_state_removes_all_references(app) -> None:
 
 
 def test_heatmap_counts_skip_deleted_activity_ids(app) -> None:
-    class Repository:
-        def get_time_series(self, activity_id: int) -> pd.DataFrame:
-            if activity_id == 2:
-                raise ValueError("Cannot find activity 2 in DB.session.")
-            return pd.DataFrame({"x": [0.5], "y": [0.5], "segment_id": [0]})
-
     with app.app_context():
+        activity = Activity(id=1, name="Ride", time_series_uuid=str(uuid.uuid4()))
+        DB.session.add(activity)
+        DB.session.flush()
+        activity.replace_time_series(
+            pd.DataFrame({"x": [0.5], "y": [0.5], "segment_id": [0]})
+        )
         DB.session.add_all(
             [
                 ActivityTile(zoom=17, tile_x=1, tile_y=2, activity_id=1),
+                # Activity 2 has no matching Activity row, simulating deletion.
                 ActivityTile(zoom=17, tile_x=1, tile_y=2, activity_id=2),
             ]
         )
         DB.session.commit()
 
         config = SimpleNamespace(heatmap_cache_min_activities=0)
-        # Activity 2 raises (simulating deletion); _get_counts must skip it and
-        # still return counts without error.
-        counts = _get_counts(1, 2, 17, {}, config, Repository())
+        # get_time_series(2) raises because the activity was deleted; _get_counts
+        # must skip it and still return counts without error.
+        counts = _get_counts(1, 2, 17, {}, config)
         assert counts.shape == (OSM_TILE_SIZE, OSM_TILE_SIZE)
 
 
 def test_process_activity_updates_first_and_last_fields_in_db(app) -> None:
     with app.app_context():
-        DB.session.add_all([Activity(id=1, name="Older"), Activity(id=2, name="Newer")])
+        older = Activity(id=1, name="Older", time_series_uuid=str(uuid.uuid4()))
+        newer = Activity(id=2, name="Newer", time_series_uuid=str(uuid.uuid4()))
+        DB.session.add_all([older, newer])
+        DB.session.flush()
+        older.replace_time_series(
+            pd.DataFrame(
+                {
+                    "time": [pd.Timestamp("2024-01-01T10:00:00Z")],
+                    "x": [0.25],
+                    "y": [0.25],
+                    "segment_id": [0],
+                }
+            )
+        )
+        newer.replace_time_series(
+            pd.DataFrame(
+                {
+                    "time": [pd.Timestamp("2024-01-02T10:00:00Z")],
+                    "x": [0.25],
+                    "y": [0.25],
+                    "segment_id": [0],
+                }
+            )
+        )
         DB.session.commit()
 
-        class Repository:
-            def __init__(self) -> None:
-                self.activities = {
-                    1: SimpleNamespace(
-                        id=1,
-                    ),
-                    2: SimpleNamespace(
-                        id=2,
-                    ),
-                }
-                self.series = {
-                    1: pd.DataFrame(
-                        {
-                            "time": [pd.Timestamp("2024-01-01T10:00:00Z")],
-                            "x": [0.25],
-                            "y": [0.25],
-                            "segment_id": [0],
-                        }
-                    ),
-                    2: pd.DataFrame(
-                        {
-                            "time": [pd.Timestamp("2024-01-02T10:00:00Z")],
-                            "x": [0.25],
-                            "y": [0.25],
-                            "segment_id": [0],
-                        }
-                    ),
-                }
-
-            def get_activity_by_id(self, activity_id: int):
-                return self.activities[activity_id]
-
-            def get_time_series(self, activity_id: int) -> pd.DataFrame:
-                return self.series[activity_id]
-
-        repository = Repository()
-        _process_activity(repository, 2)
-        _process_activity(repository, 1)
+        _process_activity(2)
+        _process_activity(1)
 
         visit = DB.session.scalar(
             sa.select(TileVisit).where(
@@ -233,32 +222,24 @@ def test_tiles_from_points_localizes_naive_time_series() -> None:
 
 def test_process_activity_prefers_non_missing_time_for_same_tile(app) -> None:
     with app.app_context():
-        DB.session.add(Activity(id=1, name="Mixed Time Activity"))
+        activity = Activity(
+            id=1, name="Mixed Time Activity", time_series_uuid=str(uuid.uuid4())
+        )
+        DB.session.add(activity)
+        DB.session.flush()
+        activity.replace_time_series(
+            pd.DataFrame(
+                {
+                    "time": [pd.NaT, pd.Timestamp("2024-01-01T10:00:00Z")],
+                    "x": [0.25, 0.25],
+                    "y": [0.25, 0.25],
+                    "segment_id": [0, 0],
+                }
+            )
+        )
         DB.session.commit()
 
-        class Repository:
-            def __init__(self) -> None:
-                self.activity = SimpleNamespace(
-                    id=1,
-                )
-                self.series = pd.DataFrame(
-                    {
-                        "time": [pd.NaT, pd.Timestamp("2024-01-01T10:00:00Z")],
-                        "x": [0.25, 0.25],
-                        "y": [0.25, 0.25],
-                        "segment_id": [0, 0],
-                    }
-                )
-
-            def get_activity_by_id(self, activity_id: int):
-                assert activity_id == 1
-                return self.activity
-
-            def get_time_series(self, activity_id: int) -> pd.DataFrame:
-                assert activity_id == 1
-                return self.series
-
-        _process_activity(Repository(), 1)
+        _process_activity(1)
 
         visit = DB.session.scalar(
             sa.select(TileVisit).where(
@@ -274,60 +255,44 @@ def test_process_activity_prefers_non_missing_time_for_same_tile(app) -> None:
 
 def test_process_activity_uses_activity_start_when_track_times_missing(app) -> None:
     with app.app_context():
-        DB.session.add_all(
-            [
-                Activity(
-                    id=1, name="No Track Times", start=dt.datetime(2024, 1, 1, 9, 0, 0)
-                ),
-                Activity(
-                    id=2, name="Later Visit", start=dt.datetime(2024, 1, 2, 9, 0, 0)
-                ),
-            ]
+        no_track_times = Activity(
+            id=1,
+            name="No Track Times",
+            start=dt.datetime(2024, 1, 1, 9, 0, 0),
+            time_series_uuid=str(uuid.uuid4()),
+        )
+        later_visit = Activity(
+            id=2,
+            name="Later Visit",
+            start=dt.datetime(2024, 1, 2, 9, 0, 0),
+            time_series_uuid=str(uuid.uuid4()),
+        )
+        DB.session.add_all([no_track_times, later_visit])
+        DB.session.flush()
+        no_track_times.replace_time_series(
+            pd.DataFrame(
+                {
+                    "time": [pd.NaT],
+                    "x": [0.25],
+                    "y": [0.25],
+                    "segment_id": [0],
+                }
+            )
+        )
+        later_visit.replace_time_series(
+            pd.DataFrame(
+                {
+                    "time": [pd.Timestamp("2024-01-02T09:00:00Z")],
+                    "x": [0.25],
+                    "y": [0.25],
+                    "segment_id": [0],
+                }
+            )
         )
         DB.session.commit()
 
-        class Repository:
-            def __init__(self) -> None:
-                self.activities = {
-                    1: SimpleNamespace(
-                        id=1,
-                        start=dt.datetime(2024, 1, 1, 9, 0, 0),
-                        start_utc=dt.datetime(2024, 1, 1, 9, 0, 0, tzinfo=dt.UTC),
-                    ),
-                    2: SimpleNamespace(
-                        id=2,
-                        start=dt.datetime(2024, 1, 2, 9, 0, 0),
-                        start_utc=dt.datetime(2024, 1, 2, 9, 0, 0, tzinfo=dt.UTC),
-                    ),
-                }
-                self.series = {
-                    1: pd.DataFrame(
-                        {
-                            "time": [pd.NaT],
-                            "x": [0.25],
-                            "y": [0.25],
-                            "segment_id": [0],
-                        }
-                    ),
-                    2: pd.DataFrame(
-                        {
-                            "time": [pd.Timestamp("2024-01-02T09:00:00Z")],
-                            "x": [0.25],
-                            "y": [0.25],
-                            "segment_id": [0],
-                        }
-                    ),
-                }
-
-            def get_activity_by_id(self, activity_id: int):
-                return self.activities[activity_id]
-
-            def get_time_series(self, activity_id: int) -> pd.DataFrame:
-                return self.series[activity_id]
-
-        repository = Repository()
-        _process_activity(repository, 1)
-        _process_activity(repository, 2)
+        _process_activity(1)
+        _process_activity(2)
 
         visit = DB.session.scalar(
             sa.select(TileVisit).where(
@@ -380,8 +345,7 @@ def test_deterministic_ordering_for_activity_and_tile_history(app) -> None:
             ]
         )
         DB.session.commit()
-        repository = ActivityRepository()
-        assert repository.get_activity_ids() == [1, 2]
+        assert get_activity_ids() == [1, 2]
 
         DB.session.add_all(
             [

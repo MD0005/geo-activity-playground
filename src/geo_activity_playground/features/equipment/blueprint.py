@@ -6,10 +6,9 @@ from flask import Blueprint, redirect, render_template, request, url_for
 from flask.typing import ResponseReturnValue
 from flask_babel import gettext as _
 
-from ...core.activities import ActivityRepository
 from ...core.config import ConfigAccessor
 from ...core.currency import money_title
-from ...core.datamodel import DB, Equipment
+from ...core.datamodel import DB, Equipment, query_activity_meta
 from ...core.internal_pictures import delete_internal_picture, save_internal_picture
 from ...webui.authenticator import Authenticator, needs_authentication
 from ...webui.flasher import Flasher, FlashTypes
@@ -216,10 +215,9 @@ def _maintenance_flow_plot(links: pd.DataFrame, currency: str) -> str | None:
     return chart.to_json(format="vega")
 
 
-def _equipment_plots(
-    repository: ActivityRepository, config_accessor: ConfigAccessor, equipment: str
-) -> dict[str, str]:
-    selection = repository.meta.loc[repository.meta["equipment"] == equipment]
+def _equipment_plots(config_accessor: ConfigAccessor, equipment: str) -> dict[str, str]:
+    meta = query_activity_meta()
+    selection = meta.loc[meta["equipment"] == equipment]
     total_distances = pd.DataFrame(
         {
             "time": selection["start_local"],
@@ -263,7 +261,7 @@ def _equipment_plots(
             alt.Y("sum(distance_km)", title=_("Distance / km")),
             alt.Color(
                 "kind",
-                scale=make_kind_scale(repository.meta, config_accessor.ui()),
+                scale=make_kind_scale(meta, config_accessor.ui()),
                 title=_("Kind"),
             ),
             tooltip=[
@@ -322,7 +320,6 @@ def _apply_uploaded_picture(equipment: Equipment, flasher: Flasher) -> None:
 
 
 def make_equipment_blueprint(
-    repository: ActivityRepository,
     config_accessor: ConfigAccessor,
     authenticator: Authenticator,
     flasher: Flasher,
@@ -337,7 +334,8 @@ def make_equipment_blueprint(
             equipment.name: equipment.picture_filename for equipment in equipments
         }
         offsets = {equipment.name: equipment.offset_km for equipment in equipments}
-        equipment_summary = get_equipment_use_table(repository.meta, offsets)
+        meta = query_activity_meta()
+        equipment_summary = get_equipment_use_table(meta, offsets)
         equipment_summary["id"] = equipment_summary["equipment"].map(equipment_ids)
         # dtype=object avoids pandas coercing missing filenames to float NaN
         # (truthy in Jinja) instead of None, which .map() would otherwise do.
@@ -351,7 +349,7 @@ def make_equipment_blueprint(
         )
 
         # Prepare data for the stacked area chart
-        activities = repository.meta.dropna(subset=["start_local"])
+        activities = meta.dropna(subset=["start_local"])
         activities["month"] = (
             activities["start_local"].dt.to_period("M").apply(lambda r: r.start_time)
         )
@@ -409,7 +407,7 @@ def make_equipment_blueprint(
         variables = {
             "equipment": equipment,
             "usage_km": usage_km,
-            "plots": _equipment_plots(repository, config_accessor, equipment.name),
+            "plots": _equipment_plots(config_accessor, equipment.name),
             "flow_plot": flow_plot,
             "is_authenticated": authenticator.is_authenticated(),
         }

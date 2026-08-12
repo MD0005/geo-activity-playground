@@ -14,9 +14,8 @@ from flask import Blueprint, Response, redirect, render_template, request, url_f
 from flask_babel import gettext as _
 from PIL import Image, ImageDraw
 
-from ...core.activities import ActivityRepository
 from ...core.config import ConfigAccessor
-from ...core.datamodel import DB, StoredSearchQuery, UiConfig
+from ...core.datamodel import DB, StoredSearchQuery, UiConfig, get_time_series
 from ...core.grid import geojson_bounding_box_for_tile_collection
 from ...core.meta_search import (
     apply_search_filter,
@@ -61,7 +60,6 @@ def _handle_db_lock(message: str) -> Generator[None, None, None]:
 
 
 def make_heatmap_blueprint(
-    repository: ActivityRepository,
     config_accessor: ConfigAccessor,
     authenticator: Authenticator,
 ) -> Blueprint:
@@ -107,7 +105,6 @@ def make_heatmap_blueprint(
                 z,
                 primitives,
                 config_accessor.ui(),
-                repository,
             ),
             format="png",
         )
@@ -143,7 +140,6 @@ def make_heatmap_blueprint(
                     tile_bounds.zoom,
                     primitives,
                     config_accessor.ui(),
-                    repository,
                 )
 
         f = io.BytesIO()
@@ -270,7 +266,6 @@ def _get_counts(
     z: int,
     primitives: dict,
     config: UiConfig,
-    repository: ActivityRepository,
 ) -> np.ndarray:
     tile_pixels = (OSM_TILE_SIZE, OSM_TILE_SIZE)
     tile_counts = np.zeros(tile_pixels, dtype=np.int32)
@@ -324,7 +319,7 @@ def _get_counts(
                 f"Skipping activity {activity_id} for {x=}/{y=}/{z=} due to DB error."
             ):
                 try:
-                    time_series = repository.get_time_series(activity_id)
+                    time_series = get_time_series(activity_id)
                 except ValueError:
                     logger.warning(
                         f"Skipping deleted activity {activity_id} for {x=}/{y=}/{z=}."
@@ -349,7 +344,7 @@ def _get_counts(
     else:
         for activity_id in activity_ids:
             try:
-                time_series = repository.get_time_series(activity_id)
+                time_series = get_time_series(activity_id)
             except ValueError:
                 logger.warning(
                     f"Skipping deleted activity {activity_id} for {x=}/{y=}/{z=}."
@@ -391,11 +386,10 @@ def _render_tile_image(
     z: int,
     primitives: dict,
     config: UiConfig,
-    repository: ActivityRepository,
 ) -> np.ndarray:
     tile_pixels = (OSM_TILE_SIZE, OSM_TILE_SIZE)
     tile_counts = np.zeros(tile_pixels)
-    tile_counts += _get_counts(x, y, z, primitives, config, repository)
+    tile_counts += _get_counts(x, y, z, primitives, config)
 
     tile_counts = np.sqrt(tile_counts) / 5
     tile_counts[tile_counts > 1.0] = 1.0

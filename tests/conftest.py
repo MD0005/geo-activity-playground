@@ -7,7 +7,6 @@ import jinja2
 import pytest
 from flask import Flask
 
-from geo_activity_playground.core.activities import ActivityRepository
 from geo_activity_playground.core.config import ConfigAccessor
 from geo_activity_playground.core.scan import scan_for_activities
 from geo_activity_playground.webui.app import create_app
@@ -97,7 +96,6 @@ def seeded_app(app: Flask, testdata_dir: pathlib.Path):
         )
         config_accessor.save()
         scan_for_activities(
-            ActivityRepository(),
             config_accessor,
             skip_strava=True,
             skip_hammerhead=True,
