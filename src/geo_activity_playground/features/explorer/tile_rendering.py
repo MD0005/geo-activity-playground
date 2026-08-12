@@ -382,12 +382,18 @@ class NumVisitsColorStrategy(ColorStrategy):
 
 
 class MissingColorStrategy(ColorStrategy):
-    def __init__(self, tile_visits, styles: TileStyleSpecs):
+    def __init__(
+        self,
+        tile_visits,
+        styles: TileStyleSpecs,
+        inaccessible_tiles: AbstractSet[tuple[int, int]] = frozenset(),
+    ):
         self.tile_visits = tile_visits
         self._styles = styles
+        self._inaccessible_tiles = inaccessible_tiles
 
     def color(self, tile_xy: tuple[int, int]) -> TilePattern | None:
-        if tile_xy in self.tile_visits:
+        if tile_xy in self.tile_visits or tile_xy in self._inaccessible_tiles:
             return None
         else:
             return _styled(self._styles, TileStyleName.MISSING)
@@ -499,6 +505,7 @@ def _resolve_color_strategy(
     historical_state: Any | None,
     config: UiConfig,
     filtered_state: Any | None = None,
+    inaccessible_tiles: AbstractSet[tuple[int, int]] = frozenset(),
 ) -> ColorStrategy:
     color_strategy_name = request.args.get("color_strategy", "colorful_cluster")
     if color_strategy_name == "default":
@@ -542,7 +549,7 @@ def _resolve_color_strategy(
         case "visits":
             return NumVisitsColorStrategy(tile_visits, config)
         case "missing":
-            return MissingColorStrategy(tile_visits, styles)
+            return MissingColorStrategy(tile_visits, styles, inaccessible_tiles)
         case "visited":
             return VisitedColorStrategy(tile_visits, styles)
         case "latest_new":

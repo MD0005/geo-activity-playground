@@ -20,6 +20,7 @@ Types of changes
 Fixed:
 
 - Discard corrupted legacy heatmap cache files during the startup import into the database instead of aborting the whole import and re-logging the same error on every startup.
+- Tiles marked as inaccessible are no longer drawn in the `missing` color strategy of the explorer tile URL, matching the existing exclusion in the missing-tiles downloads. ([GH-478](https://github.com/martin-ueding/geo-activity-playground/issues/478))
 
 ## Version 1.47.0 — 2026-08-08
 

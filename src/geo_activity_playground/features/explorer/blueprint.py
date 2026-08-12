@@ -531,6 +531,13 @@ def make_explorer_blueprint(
             )
             historical_state = get_cluster_state_at_cutoff(zoom, history_event_index)
 
+        inaccessible_tiles = get_inaccessible_tiles(
+            zoom,
+            tile_bounds.x_min,
+            tile_bounds.x_max,
+            tile_bounds.y_min,
+            tile_bounds.y_max,
+        )
         color_strategy = _resolve_color_strategy(
             request,
             zoom,
@@ -542,6 +549,7 @@ def make_explorer_blueprint(
             historical_state,
             config,
             filtered_state,
+            inaccessible_tiles,
         )
 
         result = _render_tile_image(zoom, z, x, y, color_strategy, evolution_state)
