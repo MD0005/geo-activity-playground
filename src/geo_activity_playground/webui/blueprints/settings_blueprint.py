@@ -580,7 +580,12 @@ def make_settings_blueprint(
             TileStyleName.VISITED: _("Visited"),
             TileStyleName.MISSING: _("Missing"),
             TileStyleName.NEW_TILE: _("New in this activity"),
-            TileStyleName.NEW_CLUSTER: _("New cluster in this activity"),
+            TileStyleName.NEW_TILE_NEW_CLUSTER: _(
+                "New in this activity, joined a cluster"
+            ),
+            TileStyleName.VISITED_NEW_CLUSTER: _(
+                "Visited before, joined a cluster in this activity"
+            ),
             TileStyleName.MAX_CLUSTER: _("Part of max cluster"),
             TileStyleName.OTHER_CLUSTER: _("Part of other cluster"),
             TileStyleName.OLD_CLUSTER: _("Part of cluster before this activity"),
@@ -618,7 +623,8 @@ def make_settings_blueprint(
                 ),
                 [
                     TileStyleName.NEW_TILE,
-                    TileStyleName.NEW_CLUSTER,
+                    TileStyleName.NEW_TILE_NEW_CLUSTER,
+                    TileStyleName.VISITED_NEW_CLUSTER,
                     TileStyleName.OLD_CLUSTER,
                 ],
             ),

@@ -7,7 +7,7 @@
 {% block settings_content %}
 <h1 class="mb-3">{{ _('Tile Rendering') }}</h1>
 
-<p>{{ _('Each named tile is drawn with an optional fill, a border, and optional diagonal stripes. A tile that belongs to several categories at once shows one border per category, nested from the outside in. Setting the alpha channel to zero switches an element off.') }}</p>
+<p>{{ _('Each named tile is drawn with an optional fill, a border, and optional diagonal stripes. Setting the alpha channel to zero switches an element off.') }}</p>
 
 <form method="POST">
     {% for group in tile_style_groups %}

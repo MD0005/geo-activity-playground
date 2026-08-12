@@ -4,7 +4,6 @@ import datetime
 import functools
 import hashlib
 import itertools
-from collections.abc import Iterable
 from collections.abc import Set as AbstractSet
 from types import SimpleNamespace
 from typing import Any, NamedTuple
@@ -129,79 +128,61 @@ def _border_mask(width: int, inset: int, thickness: int, dashed: bool) -> np.nda
 
 
 @functools.lru_cache(maxsize=256)
-def _rasterize_specs(specs: tuple[TileStyleSpec, ...], width: int) -> np.ndarray:
-    """Render a stack of styles; the first spec ends up on top and outermost.
+def _rasterize_spec(spec: TileStyleSpec, width: int) -> np.ndarray:
+    """Render fill, stripes and border of one style.
 
-    The result is shared between all tiles with the same styles, so callers must
+    The result is shared between all tiles with the same style, so callers must
     treat it as read-only.
     """
     rgba = np.zeros((width, width, 4), dtype=np.float32)
 
-    for spec in reversed(specs):
-        if spec.fill_color[3] > 0:
-            fill = np.broadcast_to(
-                np.array(spec.fill_color, dtype=np.float32), (width, width, 4)
-            )
-            rgba = _over(fill, rgba)
-
-    stripes = _stripe_mask(width)
-    for spec in reversed(specs):
-        if spec.stripe_color[3] > 0:
-            layer = np.zeros((width, width, 4), dtype=np.float32)
-            layer[stripes] = spec.stripe_color
-            rgba = _over(layer, rgba)
-
-    inset = 0
-    for spec in specs:
-        if spec.border_color[3] == 0 or spec.border_width == 0:
-            continue
-        if 2 * inset >= width:
-            break
-        thickness = min(
-            max(1, round(spec.border_width * width / OSM_TILE_SIZE)), width - 2 * inset
+    if spec.fill_color[3] > 0:
+        fill = np.broadcast_to(
+            np.array(spec.fill_color, dtype=np.float32), (width, width, 4)
         )
+        rgba = _over(fill, rgba)
+
+    if spec.stripe_color[3] > 0:
         layer = np.zeros((width, width, 4), dtype=np.float32)
-        layer[_border_mask(width, inset, thickness, spec.border_dashed)] = (
-            spec.border_color
-        )
+        layer[_stripe_mask(width)] = spec.stripe_color
         rgba = _over(layer, rgba)
-        inset += thickness
+
+    if spec.border_color[3] > 0 and spec.border_width > 0:
+        thickness = min(max(1, round(spec.border_width * width / OSM_TILE_SIZE)), width)
+        layer = np.zeros((width, width, 4), dtype=np.float32)
+        layer[_border_mask(width, 0, thickness, spec.border_dashed)] = spec.border_color
+        rgba = _over(layer, rgba)
 
     return rgba
 
 
 class StyledTilePattern(TilePattern):
-    """Fills and stripes composited by priority, borders nested inside the tile.
-
-    Staying within the tile means that borders of adjacent tiles never overlap,
-    and a tile that belongs to several categories shows one ring per category.
-    """
-
-    def __init__(self, specs: Iterable[TileStyleSpec]) -> None:
-        self._specs = tuple(specs)
+    def __init__(self, spec: TileStyleSpec | None) -> None:
+        self._spec = spec
 
     def __bool__(self) -> bool:
-        return bool(self._specs)
+        return self._spec is not None
 
     def rasterize(self, shape: tuple[int, int]) -> np.ndarray:
         _, width = shape
-        return _rasterize_specs(self._specs, width)
+        assert self._spec is not None
+        return _rasterize_spec(self._spec, width)
 
 
 PREVIEW_CHECKER_SIZE = 16
 
 
 def render_tile_style_preview(
-    specs: Iterable[TileStyleSpec], width: int = OSM_TILE_SIZE
+    spec: TileStyleSpec, width: int = OSM_TILE_SIZE
 ) -> np.ndarray:
-    """Draw styles onto a checkerboard so that transparency stays visible."""
+    """Draw a style onto a checkerboard so that transparency stays visible."""
     i, j = np.indices((width, width))
     shade = np.where(
         (i // PREVIEW_CHECKER_SIZE + j // PREVIEW_CHECKER_SIZE) % 2 == 0, 0.95, 0.8
     ).astype(np.float32)
     background = np.ones((width, width, 4), dtype=np.float32)
     background[..., :3] = shade[..., np.newaxis]
-    return _over(StyledTilePattern(specs).rasterize((width, width)), background)
+    return _over(StyledTilePattern(spec).rasterize((width, width)), background)
 
 
 def get_tile_style_specs() -> dict[TileStyleName, TileStyleSpec]:
@@ -219,8 +200,8 @@ class ColorStrategy(abc.ABC):
     def color(self, tile_xy: tuple[int, int]) -> TilePattern | None: ...
 
 
-def _styled(styles: TileStyleSpecs, *names: TileStyleName) -> TilePattern:
-    return StyledTilePattern(styles[name] for name in names)
+def _styled(styles: TileStyleSpecs, name: TileStyleName) -> TilePattern:
+    return StyledTilePattern(styles[name])
 
 
 class MaxClusterColorStrategy(ColorStrategy):
@@ -416,10 +397,12 @@ class VisitedColorStrategy(ColorStrategy):
 class ActivityHighlightColorStrategy(ColorStrategy):
     """Standalone layer: cluster context plus what one activity changed.
 
-    Tiles that already belonged to a cluster before the activity are drawn
-    with ``OLD_CLUSTER``, other visited tiles with ``VISITED``, and on top of
-    that the tiles the activity newly discovered or newly clustered get their
-    own nested border, so the layer needs no other layer underneath it.
+    Every tile falls into exactly one of five states, each its own style:
+    already part of a cluster before the activity (``OLD_CLUSTER``), visited
+    before but not clustered (``VISITED``), newly clustered by this activity
+    while already visited (``VISITED_NEW_CLUSTER``), newly discovered by this
+    activity without joining a cluster (``NEW_TILE``), or newly discovered and
+    newly clustered in the same activity (``NEW_TILE_NEW_CLUSTER``).
     """
 
     def __init__(
@@ -437,16 +420,21 @@ class ActivityHighlightColorStrategy(ColorStrategy):
         self._styles = styles
 
     def color(self, tile_xy: tuple[int, int]) -> TilePattern | None:
-        names = []
-        if tile_xy in self._old_cluster_tiles:
-            names.append(TileStyleName.OLD_CLUSTER)
+        is_new = tile_xy in self._new_tiles
+        is_cluster_gained = tile_xy in self._cluster_gained
+        if is_new and is_cluster_gained:
+            name = TileStyleName.NEW_TILE_NEW_CLUSTER
+        elif is_cluster_gained:
+            name = TileStyleName.VISITED_NEW_CLUSTER
+        elif is_new:
+            name = TileStyleName.NEW_TILE
+        elif tile_xy in self._old_cluster_tiles:
+            name = TileStyleName.OLD_CLUSTER
         elif tile_xy in self.tile_visits:
-            names.append(TileStyleName.VISITED)
-        if tile_xy in self._new_tiles:
-            names.append(TileStyleName.NEW_TILE)
-        if tile_xy in self._cluster_gained:
-            names.append(TileStyleName.NEW_CLUSTER)
-        return _styled(self._styles, *names) if names else None
+            name = TileStyleName.VISITED
+        else:
+            return None
+        return _styled(self._styles, name)
 
 
 class SquarePlannerColorStrategy(ColorStrategy):

@@ -212,7 +212,8 @@ class TileStyleName(StrEnum):
     VISITED = "visited"
     MISSING = "missing"
     NEW_TILE = "new_tile"
-    NEW_CLUSTER = "new_cluster"
+    NEW_TILE_NEW_CLUSTER = "new_tile_new_cluster"
+    VISITED_NEW_CLUSTER = "visited_new_cluster"
     MAX_CLUSTER = "max_cluster"
     OTHER_CLUSTER = "other_cluster"
     OLD_CLUSTER = "old_cluster"
@@ -274,14 +275,19 @@ def _defaults(
 
 
 TILE_STYLE_DEFAULTS: dict[TileStyleName, dict[str, str | int]] = {
-    TileStyleName.VISITED: _defaults(fill_color="#0000004d"),
+    TileStyleName.VISITED: _defaults(fill_color="#5e5c6480"),
     TileStyleName.MISSING: _defaults(fill_color="#0000004d"),
-    TileStyleName.NEW_TILE: _defaults(border_color="#ff7700ff"),
-    TileStyleName.NEW_CLUSTER: _defaults(border_color="#0066ffff"),
+    TileStyleName.NEW_TILE: _defaults(fill_color="#e01b2480", border_color="#ff770000"),
+    TileStyleName.NEW_TILE_NEW_CLUSTER: _defaults(
+        fill_color="#e01b2480", border_color="#0066ff00", stripe_color="#3584e480"
+    ),
+    TileStyleName.VISITED_NEW_CLUSTER: _defaults(
+        fill_color="#3d384680", border_color="#0066ff00", stripe_color="#3584e480"
+    ),
     TileStyleName.MAX_CLUSTER: _defaults(fill_color="#377eb84d"),
     TileStyleName.OTHER_CLUSTER: _defaults(fill_color="#4daf4a4d"),
-    TileStyleName.OLD_CLUSTER: _defaults(fill_color="#9966cc4d"),
-    TileStyleName.INACCESSIBLE: _defaults(stripe_color="#80808099"),
+    TileStyleName.OLD_CLUSTER: _defaults(fill_color="#3584e480"),
+    TileStyleName.INACCESSIBLE: _defaults(stripe_color="#ed333b80"),
 }
 
 

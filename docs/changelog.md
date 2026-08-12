@@ -19,8 +19,10 @@ Types of changes
 
 Changed:
 
-- The `latest_new` explorer color strategy is now a standalone layer: it fills every visited tile and shades tiles that were already clustered before the activity with a new `old_cluster` style, so it no longer needs another color strategy layered underneath it to be readable.
-- The tile rendering settings page groups the tile styles into “Tile state”, “Cluster layer”, and “Activity highlight layer”, so it is clearer which styles are always used the same way and which ones belong together as one color strategy.
+- Simplify the "latest new" explorer color strategy:
+  - It is now a stand-alone layer that doesn't need to be composed with other layers.
+  - The tile styles expose ever possible combination instead of relying on the user to find a coloring scheme that composes. ([GH-366](https://github.com/martin-ueding/geo-activity-playground/issues/366))
+  - On the settings page, the different styles are grouped by the layer that use them.
 
 Fixed:
 

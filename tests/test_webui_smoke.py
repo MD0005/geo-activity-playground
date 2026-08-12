@@ -165,21 +165,19 @@ def test_explorer_latest_new_tiles_isolates_latest_activity(client, app):
         return np.asarray(Image.open(io.BytesIO(response.data)).convert("RGBA"))
 
     # The layer is standalone: every visited tile is filled, and the tile first
-    # explored by the latest activity (id=2) additionally gets a border ring so
-    # that neighbouring tiles cannot overlap.
+    # explored by the latest activity (id=2) gets the distinct "new tile" fill
+    # instead of the plain "visited" one.
     latest = tile_array(101, 200)
-    assert tuple(latest[2, 128]) != tuple(latest[128, 128])
-    assert int(latest[128, 128, 3]) > 0
-
     other = tile_array(100, 200)
-    assert tuple(other[2, 128]) == tuple(other[128, 128])
+    assert tuple(latest[128, 128]) != tuple(other[128, 128])
+    assert int(latest[128, 128, 3]) > 0
     assert int(other[128, 128, 3]) > 0
 
     # An explicit activity selects that activity instead of the latest one.
     selected = tile_array(100, 200, "&activity_id=1")
-    assert tuple(selected[2, 128]) != tuple(selected[128, 128])
     not_selected = tile_array(101, 200, "&activity_id=1")
-    assert tuple(not_selected[2, 128]) == tuple(not_selected[128, 128])
+    assert tuple(selected[128, 128]) != tuple(not_selected[128, 128])
+    assert tuple(selected[128, 128]) == tuple(latest[128, 128])
 
 
 def test_cluster_history_endpoints_load(client, app):

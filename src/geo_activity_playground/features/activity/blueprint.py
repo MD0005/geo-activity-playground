@@ -210,7 +210,12 @@ def make_activity_blueprint(
             "new_tile_stats": new_tile_stats,
             "new_tiles_bbox": new_tiles_bbox,
             "new_tile_color": tile_styles[TileStyleName.NEW_TILE].border_color,
-            "new_cluster_color": tile_styles[TileStyleName.NEW_CLUSTER].border_color,
+            "new_cluster_color": tile_styles[
+                TileStyleName.VISITED_NEW_CLUSTER
+            ].border_color,
+            "new_tile_new_cluster_color": tile_styles[
+                TileStyleName.NEW_TILE_NEW_CLUSTER
+            ].border_color,
             "show_progress_markers": config.show_progress_markers,
         }
 

@@ -570,7 +570,7 @@ def make_explorer_blueprint(
             border_dashed=request.args.get("border_stroke") == BorderStroke.DASHED,
             stripe_color=hex_color_to_tuple(colors["stripe_color"]),
         )
-        return _png_response(render_tile_style_preview([spec]))
+        return _png_response(render_tile_style_preview(spec))
 
     @blueprint.route(
         "/<int:zoom>/latest-new-tiles-activity/<int:z>/<int:x>/<int:y>.png"
