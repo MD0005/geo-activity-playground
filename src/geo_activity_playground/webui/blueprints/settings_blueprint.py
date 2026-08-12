@@ -941,6 +941,21 @@ def make_settings_blueprint(
             ],
         )
 
+    @blueprint.route("/explorer-counted-activities")
+    @needs_authentication(authenticator)
+    def explorer_counted_activities():
+        ui_config = config_accessor.ui()
+        selected_kinds = set(json.loads(ui_config.explorer_filter_json).get("kind", []))
+        return render_template(
+            "settings/explorer-counted-activities.html.j2",
+            kinds=[
+                (kind.id, kind.name, kind.id in selected_kinds)
+                for kind in DB.session.scalars(
+                    sqlalchemy.select(Kind).order_by(Kind.name)
+                ).all()
+            ],
+        )
+
     @blueprint.route("/explorer-filter", methods=["POST"])
     @needs_authentication(authenticator)
     def explorer_filter():
@@ -960,7 +975,7 @@ def make_settings_blueprint(
             _("Updated the activities counting for explorer tiles."),
             FlashTypes.SUCCESS,
         )
-        return redirect(url_for(".explorer_tiles"))
+        return redirect(url_for(".explorer_counted_activities"))
 
     @blueprint.route("/explorer-tiles", methods=["GET", "POST"])
     @needs_authentication(authenticator)
@@ -980,16 +995,9 @@ def make_settings_blueprint(
             flasher.flash_message(
                 _("Updated explorer tile settings."), FlashTypes.SUCCESS
             )
-        selected_kinds = set(json.loads(ui_config.explorer_filter_json).get("kind", []))
         return render_template(
             "settings/explorer-tiles.html.j2",
             count_inaccessible_in_cluster=ui_config.count_inaccessible_in_cluster,
-            kinds=[
-                (kind.id, kind.name, kind.id in selected_kinds)
-                for kind in DB.session.scalars(
-                    sqlalchemy.select(Kind).order_by(Kind.name)
-                ).all()
-            ],
         )
 
     @blueprint.route("/map-display", methods=["GET", "POST"])

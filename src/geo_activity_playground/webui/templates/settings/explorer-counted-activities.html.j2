@@ -1,0 +1,26 @@
+{% extends "settings/base.html.j2" %}
+
+{% block breadcrumbs %}
+<li class="breadcrumb-item active" aria-current="page">{{ _('Counted Activities') }}</li>
+{% endblock %}
+
+{% block settings_content %}
+<h1 class="mb-3">{{ _('Counted Activities') }}</h1>
+
+<p>{{ _('Only the selected kinds count toward explorer tiles, clusters and squares. Leave everything unselected to count every activity. This is where you exclude the kinds you were not moving under your own power, such as car or train rides.') }}</p>
+
+<p>⚠️ {{ _('A kind that you add later is not selected automatically, so its activities will not count until you come back here and select it.') }}</p>
+
+<form method="POST" action="{{ url_for('.explorer_filter') }}">
+    {% for kind_id, kind_name, selected in kinds %}
+    <div class="form-check">
+        <input class="form-check-input" type="checkbox" id="kind-{{ kind_id }}" name="kind" value="{{ kind_id }}"
+            {{ 'checked' if selected else '' }} />
+        <label class="form-check-label" for="kind-{{ kind_id }}">{{ kind_name }}</label>
+    </div>
+    {% endfor %}
+    <button type="submit" class="btn btn-primary mt-3">{{ _('Save') }}</button>
+</form>
+
+<p class="mt-3 text-body-secondary">{{ _('Changing this rebuilds the tile visits from the stored activity tiles. Nothing is re-imported, but it takes a moment.') }}</p>
+{% endblock %}
