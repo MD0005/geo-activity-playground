@@ -249,7 +249,7 @@ def make_explorer_blueprint(
 ) -> Blueprint:
     blueprint = Blueprint("explorer", __name__, template_folder="templates")
 
-    @blueprint.route("/enable-zoom-level/<int:zoom>")
+    @blueprint.route("/enable-zoom-level/<int:zoom>", methods=["POST"])
     @needs_authentication(authenticator)
     def enable_zoom_level(zoom: int) -> ResponseReturnValue:
         if 0 <= zoom <= 19:
@@ -794,7 +794,9 @@ def make_explorer_blueprint(
             mimetype="application/json",
         )
 
-    @blueprint.route("/<int:zoom>/inaccessible/<int:tile_x>/<int:tile_y>")
+    @blueprint.route(
+        "/<int:zoom>/inaccessible/<int:tile_x>/<int:tile_y>", methods=["POST"]
+    )
     @needs_authentication(authenticator)
     def mark_inaccessible(zoom: int, tile_x: int, tile_y: int) -> ResponseReturnValue:
         tile_visit = (
@@ -824,7 +826,9 @@ def make_explorer_blueprint(
             flash(_("Tile marked as inaccessible."), category="success")
         return redirect(url_for(".server_side", zoom=zoom))
 
-    @blueprint.route("/<int:zoom>/inaccessible/<int:tile_x>/<int:tile_y>/remove")
+    @blueprint.route(
+        "/<int:zoom>/inaccessible/<int:tile_x>/<int:tile_y>/remove", methods=["POST"]
+    )
     @needs_authentication(authenticator)
     def remove_inaccessible(zoom: int, tile_x: int, tile_y: int) -> ResponseReturnValue:
         existing = (

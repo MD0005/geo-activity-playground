@@ -523,7 +523,7 @@ def make_settings_blueprint(
                 tile_y=request.args["tile_y"],
             )
 
-    @blueprint.route("/cluster-bookmarks/delete/<int:id>")
+    @blueprint.route("/cluster-bookmarks/delete/<int:id>", methods=["POST"])
     @needs_authentication(authenticator)
     def cluster_bookmark_delete(id: int):
         bookmark = DB.session.get_one(ExplorerTileBookmark, id)
@@ -800,7 +800,7 @@ def make_settings_blueprint(
             equipments=equipments,
         )
 
-    @blueprint.route("/manage-kinds/delete/<int:id>")
+    @blueprint.route("/manage-kinds/delete/<int:id>", methods=["POST"])
     @needs_authentication(authenticator)
     def kinds_delete(id: int):
         kind = DB.session.get_one(Kind, id)

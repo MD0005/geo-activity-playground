@@ -25,7 +25,7 @@ def make_authentication_blueprint(
             redirect=request.args.get("redirect", ""),
         )
 
-    @blueprint.route("/logout")
+    @blueprint.route("/logout", methods=["POST"])
     def logout() -> ResponseReturnValue:
         authenticator.logout()
         return redirect(url_for(".login"))

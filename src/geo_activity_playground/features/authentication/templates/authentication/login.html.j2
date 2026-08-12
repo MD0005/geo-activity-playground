@@ -6,7 +6,9 @@
 {% if is_authenticated %}
 <p>{{ _('You are either logged in or don\'t have a password set. You can do everything.') }}</p>
 
-<a class="btn btn-primary" href="{{ url_for('.logout') }}">{{ _('Log Out') }}</a>
+<form method="post" action="{{ url_for('.logout') }}" class="d-inline">
+    <button type="submit" class="btn btn-primary">{{ _('Log Out') }}</button>
+</form>
 {% else %}
 <form method="POST">
     <div class="mb-3">

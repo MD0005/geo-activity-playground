@@ -219,7 +219,7 @@ function setupInaccessibleLinks(map, zoom) {
         e.preventDefault();
 
         try {
-            await fetch(link.href);
+            await fetch(link.href, { method: 'POST' });
 
             const popup = map._popup;
             if (popup) {

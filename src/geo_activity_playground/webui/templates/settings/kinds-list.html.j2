@@ -45,8 +45,10 @@
             <td>{{ kind.activities|length }}</td>
             <td>
                 <a class="btn btn-sm btn-primary" href="{{ url_for('.kinds_edit', id=kind.id) }}">Edit</a>
-                <a class="btn btn-sm btn-danger" href="{{ url_for('.kinds_delete', id=kind.id) }}"
-                    onclick="if(!confirm('Are you sure you want to delete this kind?')){event.preventDefault()}">Delete</a>
+                <form method="post" action="{{ url_for('.kinds_delete', id=kind.id) }}" class="d-inline">
+                    <button type="submit" class="btn btn-sm btn-danger"
+                        onclick="if(!confirm('Are you sure you want to delete this kind?')){event.preventDefault()}">Delete</button>
+                </form>
             </td>
         </tr>
         {% endfor %}

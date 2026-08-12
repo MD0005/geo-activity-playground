@@ -149,7 +149,7 @@ def make_search_blueprint(
             mimetype="application/json",
         )
 
-    @blueprint.route("/save-search-query")
+    @blueprint.route("/save-search-query", methods=["POST"])
     @needs_authentication(authenticator)
     def save_search_query():
         primitives = parse_search_params(request.args)
@@ -174,7 +174,7 @@ def make_search_blueprint(
 
         return redirect(urllib.parse.unquote_plus(request.args["redirect"]))
 
-    @blueprint.route("/delete-search-query")
+    @blueprint.route("/delete-search-query", methods=["POST"])
     @needs_authentication(authenticator)
     def delete_search_query():
         primitives = parse_search_params(request.args)

@@ -114,7 +114,7 @@ def make_square_planner_blueprint() -> Blueprint:
         DB.session.commit()
         return redirect(request.referrer)
 
-    @blueprint.route("/delete-bookmark/<int:id>")
+    @blueprint.route("/delete-bookmark/<int:id>", methods=["POST"])
     def delete_bookmark(id: int):
         bookmark = DB.session.get(SquarePlannerBookmark, id)
         DB.session.delete(bookmark)

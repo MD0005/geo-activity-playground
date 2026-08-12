@@ -30,6 +30,10 @@ Fixed:
 - Tiles marked as inaccessible are no longer drawn in the `missing` color strategy of the explorer tile URL, matching the existing exclusion in the missing-tiles downloads. ([GH-478](https://github.com/martin-ueding/geo-activity-playground/issues/478))
 - Fix race condition when creating default explorer color styles.
 
+Security:
+
+- Routes that delete or otherwise mutate data (bookmarks, search queries, segments, maintenance actions and tasks, plot specs, kinds, explorer tile state, logout, activity re-import) now require `POST` instead of accepting plain `GET`. A `GET` route can be triggered merely by following a link — by a crawler, a browser's link prefetching, or a malicious page — without any confirmation.
+
 ## Version 1.47.0 — 2026-08-08
 
 Added:

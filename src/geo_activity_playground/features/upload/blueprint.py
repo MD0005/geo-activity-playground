@@ -144,7 +144,7 @@ def make_upload_blueprint(
     def reload():
         return render_template("upload/reload.html.j2")
 
-    @blueprint.route("/execute-reload")
+    @blueprint.route("/execute-reload", methods=["POST"])
     @needs_authentication(authenticator)
     def execute_reload():
         scan_for_activities(repository, config_accessor)

@@ -13,8 +13,9 @@
 {% if zoom_level_not_generated %}
 <p>{{ _('You try to access explorer tiles for a level that hasn\'t been generated before. That is not a problem, we just don\'t generate all levels to save a bit of time. If you want to have it, just enable it!') }}</p>
 
-<a href="{{ url_for('.enable_zoom_level', zoom=zoom_level_not_generated) }}" class="btn btn-primary">{{ _('Enable Zoom') }} {{
-    zoom_level_not_generated }}</a>
+<form method="post" action="{{ url_for('.enable_zoom_level', zoom=zoom_level_not_generated) }}" class="d-inline">
+    <button type="submit" class="btn btn-primary">{{ _('Enable Zoom') }} {{ zoom_level_not_generated }}</button>
+</form>
 
 <p class="mt-3">{{ _('All enabled zoom levels can be managed in the <a href="%(url)s">Explorer Zoom Levels settings</a>.', url=url_for('settings.explorer_zoom_levels'))|safe }}</p>
 {% else %}
@@ -107,9 +108,12 @@
             <td>{{ bookmark.name }}</td>
             <td>{{ bookmark.size }}</td>
             <td>{{ '%.1f'|format(bookmark.size / max_cluster_size * 100) }} %</td>
-            <td><a class="btn btn-danger btn-sm"
-                    href="{{ url_for('settings.cluster_bookmark_delete', id=bookmark.id) }}"
-                    onclick="if(!confirm('{{ _('Are you sure to delete this?') }}')){event.preventDefault()}">{{ _('Delete') }}</a></td>
+            <td>
+                <form method="post" action="{{ url_for('settings.cluster_bookmark_delete', id=bookmark.id) }}" class="d-inline">
+                    <button type="submit" class="btn btn-danger btn-sm"
+                        onclick="if(!confirm('{{ _('Are you sure to delete this?') }}')){event.preventDefault()}">{{ _('Delete') }}</button>
+                </form>
+            </td>
         </tr>
         {% endfor %}
     </tbody>

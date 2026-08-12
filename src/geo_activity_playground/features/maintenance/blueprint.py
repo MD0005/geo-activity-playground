@@ -187,7 +187,7 @@ def make_maintenance_blueprint(
             defaults=None,
         )
 
-    @blueprint.route("/actions/<int:id>/delete")
+    @blueprint.route("/actions/<int:id>/delete", methods=["POST"])
     @needs_authentication(authenticator)
     def delete_action(id: int) -> ResponseReturnValue:
         action = DB.session.get_one(MaintenanceAction, id)
@@ -199,7 +199,7 @@ def make_maintenance_blueprint(
         flasher.flash_message(_("Maintenance action deleted."), FlashTypes.SUCCESS)
         return redirect(url_for("equipment.show", id=equipment_id))
 
-    @blueprint.route("/action-photos/<int:id>/delete")
+    @blueprint.route("/action-photos/<int:id>/delete", methods=["POST"])
     @needs_authentication(authenticator)
     def delete_action_photo(id: int) -> ResponseReturnValue:
         photo = DB.session.get_one(MaintenanceActionPhoto, id)
@@ -251,7 +251,7 @@ def make_maintenance_blueprint(
             "maintenance/task_edit.html.j2", equipment=task.equipment, task=task
         )
 
-    @blueprint.route("/tasks/<int:id>/delete")
+    @blueprint.route("/tasks/<int:id>/delete", methods=["POST"])
     @needs_authentication(authenticator)
     def delete_task(id: int) -> ResponseReturnValue:
         task = DB.session.get_one(RecurringTask, id)
@@ -287,7 +287,7 @@ def make_maintenance_blueprint(
             "maintenance/task_execution_new.html.j2", task=task, defaults=defaults
         )
 
-    @blueprint.route("/executions/<int:id>/delete")
+    @blueprint.route("/executions/<int:id>/delete", methods=["POST"])
     @needs_authentication(authenticator)
     def delete_execution(id: int) -> ResponseReturnValue:
         execution = DB.session.get_one(TaskExecution, id)

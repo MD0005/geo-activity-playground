@@ -90,7 +90,7 @@ def make_plot_builder_blueprint(
             spec=spec,
         )
 
-    @blueprint.route("/delete/<int:id>")
+    @blueprint.route("/delete/<int:id>", methods=["POST"])
     @needs_authentication(authenticator)
     def delete(id: int) -> ResponseReturnValue:
         spec = DB.session.get(PlotSpec, id)

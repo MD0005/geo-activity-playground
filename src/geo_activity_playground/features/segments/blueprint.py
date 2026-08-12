@@ -95,7 +95,7 @@ def make_segments_blueprint(
             visible=visible,
         )
 
-    @blueprint.route("/delete/<int:id>")
+    @blueprint.route("/delete/<int:id>", methods=["POST"])
     @needs_authentication(authenticator)
     def delete(id: int) -> ResponseReturnValue:
         segment = DB.session.get_one(Segment, id)

@@ -33,7 +33,7 @@ def test_delete_search_query_removes_favorite_cache(client, app):
         DB.session.add(cache)
         DB.session.commit()
 
-    response = client.get(
+    response = client.post(
         "/search/delete-search-query?"
         + urllib.parse.urlencode({"name": "Morning Ride", "redirect": "/search"})
     )

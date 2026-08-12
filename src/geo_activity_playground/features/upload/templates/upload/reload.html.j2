@@ -11,6 +11,8 @@
 </div>
 
 <script type="text/javascript">
-    window.location.replace("{{ url_for('.execute_reload') }}");
+    fetch("{{ url_for('.execute_reload') }}", { method: "POST" }).then(() => {
+        window.location.replace("{{ url_for('index') }}");
+    });
 </script>
 {% endblock %}

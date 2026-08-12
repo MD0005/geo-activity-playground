@@ -2,9 +2,13 @@
 <li>
     <a href="?{{ url_parameters }}">{{ description }}</a>
     {% if is_favorite %}
-    <a href="{{ url_for('search.delete_search_query') }}?{{ url_parameters }}&redirect={{ request_url }}">🗑️</a>
+    <form method="post" action="{{ url_for('search.delete_search_query') }}?{{ url_parameters }}&redirect={{ request_url }}" class="d-inline">
+        <button type="submit" class="btn btn-link p-0 border-0 align-baseline">🗑️</button>
+    </form>
     {% else %}
-    <a href="{{ url_for('search.save_search_query') }}?{{ url_parameters }}&redirect={{ request_url }}">💾</a>
+    <form method="post" action="{{ url_for('search.save_search_query') }}?{{ url_parameters }}&redirect={{ request_url }}" class="d-inline">
+        <button type="submit" class="btn btn-link p-0 border-0 align-baseline">💾</button>
+    </form>
     {% endif %}
 </li>
 {% endmacro %}
