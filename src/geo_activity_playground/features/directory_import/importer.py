@@ -15,6 +15,7 @@ from ...core.datamodel import (
     get_or_make_equipment,
     get_or_make_kind,
 )
+from ...core.duplicate_matching import check_for_duplicate
 from ...core.enrichment import update_and_commit
 from ...core.import_exclusion import clear_exclusion, is_excluded, record_exclusion
 from ...importers.activity_parsers import (
@@ -158,6 +159,7 @@ def import_from_file(
     activity.source = source
 
     update_and_commit(activity, time_series, config)
+    check_for_duplicate(activity, config)
 
 
 def get_metadata_from_path(

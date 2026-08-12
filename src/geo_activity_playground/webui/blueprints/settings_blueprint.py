@@ -27,6 +27,7 @@ from ...core.datamodel import (
     Activity,
     ActivityImportConfig,
     ActivityTile,
+    DuplicateCandidate,
     Equipment,
     Kind,
     PrivacyZone,
@@ -35,6 +36,7 @@ from ...core.datamodel import (
     TileVisit,
     activity_tag_association_table,
 )
+from ...core.duplicate_matching import merge_duplicate, pick_winner
 from ...core.enrichment import enrichment_set_timezone, update_and_commit
 from ...core.heart_rate import HeartRateZoneComputer
 from ...core.import_exclusion import ImportExclusion
@@ -109,6 +111,15 @@ def _import_exclusion_reasons() -> dict[str, str]:
         "parse_error": _("Parse error"),
         "empty_time_series": _("Empty time series"),
         "deleted_by_user": _("Deleted by user"),
+        "merged_duplicate": _("Merged as a cross-source duplicate"),
+    }
+
+
+def _activity_source_labels() -> dict[str, str]:
+    return {
+        "directory": _("Directory / Manual Upload"),
+        "strava": _("Strava"),
+        "hammerhead": _("Hammerhead"),
     }
 
 
@@ -218,6 +229,7 @@ def _reimport_time_series_from_files(
 
 def _truncate_user_content_tables() -> None:
     DB.session.execute(sqlalchemy.delete(activity_tag_association_table))
+    DB.session.execute(sqlalchemy.delete(DuplicateCandidate))
     DB.session.execute(sqlalchemy.delete(SegmentMatch))
     DB.session.execute(sqlalchemy.delete(SegmentCheck))
     DB.session.execute(sqlalchemy.delete(ActivityTile))
@@ -313,6 +325,113 @@ def make_settings_blueprint(
             FlashTypes.SUCCESS,
         )
         return redirect(url_for(".excluded_activities"))
+
+    @blueprint.route("/duplicate-matching", methods=["GET", "POST"])
+    @needs_authentication(authenticator)
+    def duplicate_matching():
+        config = config_accessor.activity_import()
+        source_labels = _activity_source_labels()
+
+        if request.method == "POST":
+            config.duplicate_matching_enabled = request.form.get("enabled") == "on"
+            config.duplicate_matching_auto_resolve = (
+                request.form.get("auto_resolve") == "on"
+            )
+            time_tolerance = int_or_none(request.form.get("time_tolerance_seconds"))
+            if time_tolerance is not None and time_tolerance >= 0:
+                config.duplicate_time_tolerance_seconds = time_tolerance
+            relative_tolerance = int_or_none(
+                request.form.get("relative_tolerance_percent")
+            )
+            if relative_tolerance is not None and relative_tolerance >= 0:
+                config.duplicate_relative_tolerance = relative_tolerance / 100
+
+            priorities = dict(config.duplicate_source_priorities)
+            for source in source_labels:
+                priority = int_or_none(request.form.get(f"priority_{source}"))
+                if priority is not None:
+                    priorities[source] = priority
+            config.duplicate_source_priorities = priorities
+
+            config_accessor.save()
+            flasher.flash_message(
+                _("Updated duplicate matching settings."), FlashTypes.SUCCESS
+            )
+            return redirect(url_for(".duplicate_matching"))
+
+        return render_template(
+            "settings/duplicate-matching.html.j2",
+            enabled=config.duplicate_matching_enabled,
+            auto_resolve=config.duplicate_matching_auto_resolve,
+            time_tolerance_seconds=config.duplicate_time_tolerance_seconds,
+            relative_tolerance_percent=round(config.duplicate_relative_tolerance * 100),
+            source_labels=source_labels,
+            priorities=config.duplicate_source_priorities,
+        )
+
+    @blueprint.route("/possible-duplicates")
+    @needs_authentication(authenticator)
+    def possible_duplicates():
+        config = config_accessor.activity_import()
+        candidates = DB.session.scalars(
+            sqlalchemy.select(DuplicateCandidate).order_by(
+                DuplicateCandidate.detected_at.desc()
+            )
+        ).all()
+        rows = []
+        for candidate in candidates:
+            suggested_winner = pick_winner(
+                candidate.activity_a, candidate.activity_b, config
+            )
+            rows.append(
+                {
+                    "candidate": candidate,
+                    "suggested_keep": (
+                        "a"
+                        if suggested_winner is candidate.activity_a
+                        else "b"
+                        if suggested_winner is candidate.activity_b
+                        else None
+                    ),
+                }
+            )
+        return render_template(
+            "settings/possible-duplicates.html.j2",
+            rows=rows,
+        )
+
+    @blueprint.route("/possible-duplicates/resolve/<int:id>", methods=["POST"])
+    @needs_authentication(authenticator)
+    def possible_duplicates_resolve(id: int):
+        candidate = DB.session.get_one(DuplicateCandidate, id)
+        keep = request.form.get("keep")
+        if keep == "a":
+            winner, loser = candidate.activity_a, candidate.activity_b
+        elif keep == "b":
+            winner, loser = candidate.activity_b, candidate.activity_a
+        else:
+            flasher.flash_message(_("Invalid choice."), FlashTypes.DANGER)
+            return redirect(url_for(".possible_duplicates"))
+        merge_duplicate(winner, loser)
+        flasher.flash_message(
+            _("Merged the duplicate; the other activity has been removed."),
+            FlashTypes.SUCCESS,
+        )
+        return redirect(url_for(".possible_duplicates"))
+
+    @blueprint.route("/possible-duplicates/dismiss/<int:id>", methods=["POST"])
+    @needs_authentication(authenticator)
+    def possible_duplicates_dismiss(id: int):
+        candidate = DB.session.get_one(DuplicateCandidate, id)
+        DB.session.delete(candidate)
+        DB.session.commit()
+        flasher.flash_message(
+            _(
+                "Dismissed; these activities will not be flagged as duplicates of each other again unless re-imported."
+            ),
+            FlashTypes.SUCCESS,
+        )
+        return redirect(url_for(".possible_duplicates"))
 
     @blueprint.route("/maintenance", methods=["GET", "POST"])
     @needs_authentication(authenticator)

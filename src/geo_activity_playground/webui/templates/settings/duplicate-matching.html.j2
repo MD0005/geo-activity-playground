@@ -1,0 +1,49 @@
+{% extends "settings/base.html.j2" %}
+
+{% block breadcrumbs %}
+<li class="breadcrumb-item active" aria-current="page">{{ _('Duplicate Matching') }}</li>
+{% endblock %}
+
+{% block settings_content %}
+<h1 class="mb-3">{{ _('Duplicate Matching') }}</h1>
+
+<p>{{ _('If you import the same activity from two different sources (e.g. a device import and a later Strava archive), they will not be recognized as duplicates by content hash, since the files differ. This looks for activities from different sources with a similar start time, distance, and duration instead, and lists them under Settings → Possible Duplicates for you to merge.') }}</p>
+
+<form method="POST">
+    <div class="form-check form-switch mb-3">
+        <input class="form-check-input" type="checkbox" role="switch" id="enabled" name="enabled" {{ 'checked' if enabled else '' }} />
+        <label class="form-check-label" for="enabled">{{ _('Detect cross-source duplicate candidates') }}</label>
+    </div>
+
+    <div class="mb-3">
+        <label for="time_tolerance_seconds" class="form-label">{{ _('Start time tolerance / s') }}</label>
+        <input type="text" class="form-control" id="time_tolerance_seconds" name="time_tolerance_seconds" value="{{ time_tolerance_seconds }}" style="max-width: 12em;" />
+        <div class="form-text">{{ _('Two activities from different sources are only considered candidates if their start times are within this many seconds of each other.') }}</div>
+    </div>
+
+    <div class="mb-3">
+        <label for="relative_tolerance_percent" class="form-label">{{ _('Distance/duration tolerance / %%') }}</label>
+        <input type="text" class="form-control" id="relative_tolerance_percent" name="relative_tolerance_percent" value="{{ relative_tolerance_percent }}" style="max-width: 12em;" />
+        <div class="form-text">{{ _('Where both activities have a distance or elapsed time, they must agree within this percentage.') }}</div>
+    </div>
+
+    <div class="form-check form-switch mb-3">
+        <input class="form-check-input" type="checkbox" role="switch" id="auto_resolve" name="auto_resolve" {{ 'checked' if auto_resolve else '' }} />
+        <label class="form-check-label" for="auto_resolve">{{ _('Automatically merge candidates using the priority order below') }}</label>
+    </div>
+
+    <h2 class="h5 mt-4">{{ _('Source priority') }}</h2>
+    <p class="text-body-secondary">{{ _('When automatic merging is on and a candidate pair is found, the activity from the lower-numbered source is kept and the other is removed (its source file stays untouched and is excluded from future re-import). Equal numbers are never auto-resolved and are left for manual review instead.') }}</p>
+
+    <div class="row row-cols-1 row-cols-md-3 g-3 mb-3" style="max-width: 40em;">
+        {% for source, label in source_labels.items() %}
+        <div class="col">
+            <label for="priority_{{ source }}" class="form-label">{{ label }}</label>
+            <input type="text" class="form-control" id="priority_{{ source }}" name="priority_{{ source }}" value="{{ priorities.get(source, '') }}" />
+        </div>
+        {% endfor %}
+    </div>
+
+    <button type="submit" class="btn btn-primary">{{ _('Save') }}</button>
+</form>
+{% endblock %}

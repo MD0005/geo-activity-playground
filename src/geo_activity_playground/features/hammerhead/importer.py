@@ -9,6 +9,7 @@ import sqlalchemy
 from tqdm import tqdm
 
 from ...core.datamodel import DB, Activity, ActivityImportConfig, get_or_make_kind
+from ...core.duplicate_matching import check_for_duplicate
 from ...core.enrichment import update_and_commit
 from ...core.import_exclusion import is_excluded, record_exclusion
 from ...importers.activity_parsers import ActivityParseError, read_fit_activity
@@ -260,6 +261,7 @@ def _import_one_activity(
     activity.source = source
 
     update_and_commit(activity, time_series, config)
+    check_for_duplicate(activity, config)
     logger.info(f"Added activity '{activity.name}' from Hammerhead.")
 
 

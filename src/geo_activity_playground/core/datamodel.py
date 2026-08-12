@@ -240,6 +240,30 @@ class Activity(DB.Model):
             return None
 
 
+class DuplicateCandidate(DB.Model):
+    """A pair of activities from different sources suspected to be the same ride.
+
+    Detected when a newly imported activity's start time and distance/duration
+    are close to an existing activity from a different source. Cleared once
+    the user resolves it (merging one into the other) or it is auto-resolved.
+    """
+
+    __tablename__ = "duplicate_candidates"
+    __table_args__ = (sa.UniqueConstraint("activity_a_id", "activity_b_id"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    activity_a_id: Mapped[int] = mapped_column(
+        ForeignKey("activities.id"), nullable=False
+    )
+    activity_b_id: Mapped[int] = mapped_column(
+        ForeignKey("activities.id"), nullable=False
+    )
+    detected_at: Mapped[datetime.datetime] = mapped_column(sa.DateTime, nullable=False)
+
+    activity_a: Mapped["Activity"] = relationship(foreign_keys=[activity_a_id])
+    activity_b: Mapped["Activity"] = relationship(foreign_keys=[activity_b_id])
+
+
 class Tag(DB.Model):
     __tablename__ = "tags"
     __table_args__ = (sa.UniqueConstraint("tag", name="tags_tag"),)
@@ -703,6 +727,30 @@ class ActivityImportConfig(DB.Model):
         sa.Integer, nullable=False, default=100
     )
     upload_password: Mapped[str | None] = mapped_column(sa.String, nullable=True)
+    duplicate_matching_enabled: Mapped[bool] = mapped_column(
+        sa.Boolean, nullable=False, default=False, server_default=sa.false()
+    )
+    duplicate_matching_auto_resolve: Mapped[bool] = mapped_column(
+        sa.Boolean, nullable=False, default=False, server_default=sa.false()
+    )
+    duplicate_time_tolerance_seconds: Mapped[int] = mapped_column(
+        sa.Integer, nullable=False, default=300, server_default="300"
+    )
+    duplicate_relative_tolerance: Mapped[float] = mapped_column(
+        sa.Float, nullable=False, default=0.1, server_default="0.1"
+    )
+    duplicate_source_priorities: Mapped[dict[str, int]] = mapped_column(
+        MutableDict.as_mutable(sa.JSON),
+        nullable=False,
+        default=lambda: {"directory": 10, "strava": 20, "hammerhead": 30},
+        server_default='{"directory": 10, "strava": 20, "hammerhead": 30}',
+    )
+    """Lower number wins when a cross-source duplicate is auto-resolved.
+
+    Sources missing from this mapping are treated as lowest priority, so an
+    activity from a source added later never silently wins over one that is
+    already ranked.
+    """
 
 
 class UiConfig(DB.Model):

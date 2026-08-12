@@ -17,6 +17,10 @@ Types of changes
 
 ## Unreleased
 
+Added:
+
+- Add cross-source duplicate matching that is based on starting time and distance/duration. This is an opt-in feature, see Settings → Duplicate Matching. Duplicates can be looked at and resolved manually. You can also enable auto-resolution and set priorities for the sources. ([GH-473](https://github.com/martin-ueding/geo-activity-playground/issues/473))
+
 Changed:
 
 - Simplify the "latest new" explorer color strategy:
