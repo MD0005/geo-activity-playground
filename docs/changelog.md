@@ -17,6 +17,9 @@ Types of changes
 
 ## Unreleased
 
+Fixed:
+
+- Discard corrupted legacy heatmap cache files during the startup import into the database instead of aborting the whole import and re-logging the same error on every startup.
 
 ## Version 1.47.0 — 2026-08-08
 

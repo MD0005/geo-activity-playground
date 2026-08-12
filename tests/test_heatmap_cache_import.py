@@ -54,13 +54,26 @@ def test_startup_imports_legacy_heatmap_cache_and_removes_directory(
         os.chdir(original_cwd)
 
 
-def test_startup_keeps_legacy_directory_when_import_fails(tmp_path: pathlib.Path):
+def test_startup_discards_corrupted_legacy_cache_file_and_imports_the_rest(
+    tmp_path: pathlib.Path,
+):
     original_cwd = os.getcwd()
     os.chdir(tmp_path)
     try:
-        legacy_dir = tmp_path / "Cache" / "Heatmap" / "14" / "123"
-        legacy_dir.mkdir(parents=True)
-        (legacy_dir / "456.npy").write_bytes(b"this-is-not-a-valid-npy")
+        corrupted_dir = tmp_path / "Cache" / "Heatmap" / "14" / "123"
+        corrupted_dir.mkdir(parents=True)
+        (corrupted_dir / "456.npy").write_bytes(b"this-is-not-a-valid-npy")
+
+        good_dir = tmp_path / "Cache" / "Heatmap" / "14" / "124"
+        good_dir.mkdir(parents=True)
+        counts = np.zeros((256, 256), dtype=np.int32)
+        counts[0, 0] = 7
+        np.save(good_dir / "789.npy", counts, allow_pickle=False)
+        (good_dir / "789.json").write_text("[11, 42]", encoding="utf-8")
+
+        (tmp_path / "config.json").write_text(
+            json.dumps({"heatmap_cache_min_activities": 2}), encoding="utf-8"
+        )
 
         app = create_app(
             database_uri="sqlite:///:memory:",
@@ -68,16 +81,11 @@ def test_startup_keeps_legacy_directory_when_import_fails(tmp_path: pathlib.Path
             run_migrations=False,
         )
         with app.app_context():
-            assert (
-                DB.session.scalar(
-                    sqlalchemy.select(sqlalchemy.func.count()).select_from(
-                        HeatmapTileCache
-                    )
-                )
-                == 0
-            )
+            entry = DB.session.scalars(sqlalchemy.select(HeatmapTileCache)).one()
+            assert entry.tile_x == 124
+            assert entry.tile_y == 789
 
-        assert (tmp_path / "Cache" / "Heatmap").exists()
+        assert not (tmp_path / "Cache" / "Heatmap").exists()
     finally:
         os.chdir(original_cwd)
 
