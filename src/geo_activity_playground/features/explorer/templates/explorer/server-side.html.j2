@@ -71,7 +71,7 @@
         </p>
         <p>{{ _('Export all explored tiles as a <a href="%(url)s">Squadrats-compatible KML</a> (zoom 14 and 17) for import into the Explorer Tile Helper app.', url=url_for('.download_squadrats'))|safe }}</p>
         <script type="module">
-            import { initExplorerMap } from '/static/server-side-explorer.js';
+            import { initExplorerMap } from '/static/dist/server-side-explorer.js';
             initExplorerMap({
                 centerLatitude: {{ center.latitude }},
                 centerLongitude: {{ center.longitude }},

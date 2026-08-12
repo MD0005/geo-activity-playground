@@ -1,3 +1,5 @@
+import L from "leaflet";
+
 /**
  * Initialize the activity trim map.
  * 

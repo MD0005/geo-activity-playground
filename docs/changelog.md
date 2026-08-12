@@ -23,6 +23,8 @@ Changed:
   - It is now a stand-alone layer that doesn't need to be composed with other layers.
   - The tile styles expose ever possible combination instead of relying on the user to find a coloring scheme that composes. ([GH-366](https://github.com/martin-ueding/geo-activity-playground/issues/366))
   - On the settings page, the different styles are grouped by the layer that use them.
+- Docker images are now built by installing the published PyPI release directly instead of from a source checkout, so they always reflect a stable, already-tested release.
+- Use a bundler for all external ES resources.
 
 Fixed:
 
@@ -32,6 +34,7 @@ Fixed:
 
 Security:
 
+- Stop loading the `leaflet-relief` hillshade plugin from a jsDelivr CDN at runtime; it's now bundled locally like the rest of the webui's JavaScript dependencies.
 - Routes that delete or otherwise mutate data (bookmarks, search queries, segments, maintenance actions and tasks, plot specs, kinds, explorer tile state, logout, activity re-import) now require `POST` instead of accepting plain `GET`. A `GET` route can be triggered merely by following a link — by a crawler, a browser's link prefetching, or a malicious page — without any confirmation.
 
 ## Version 1.47.0 — 2026-08-08

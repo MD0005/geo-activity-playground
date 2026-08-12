@@ -1,7 +1,7 @@
 {% macro vega(path) %}
 {% set id = unique_id() %}
 <div id="{{ id }}"></div>
-<script type="text/javascript">
+<script type="module">
     vegaEmbed('#{{ id }}', "{{ path }}").then(function (result) { }).catch(console.error);
 </script>
 {% endmacro %}
@@ -9,7 +9,7 @@
 {% macro vega_direct(spec) %}
 {% set id = unique_id() %}
 <div id="{{ id }}"></div>
-<script type="text/javascript">
+<script type="module">
     vegaEmbed('#{{ id }}', {{ spec| safe }}).then(function (result) { }).catch(console.error);
 </script>
 {% endmacro %}
@@ -20,7 +20,7 @@
 {% macro fetched_vega(url, placeholder="") %}
 {% set id = unique_id() %}
 <div id="{{ id }}" class="text-body-secondary">{{ placeholder or _("Loading …") }}</div>
-<script type="text/javascript">
+<script type="module">
     fetch("{{ url }}")
         .then(response => response.json())
         .then(payload => {
@@ -41,7 +41,7 @@
    `geojson` may be null to get a bare map without a layer. Options: weight, opacity, padding. #}
 {% macro map_script() %}
 <script type="module">
-    import { add_layers_to_map } from '/static/map-layers.js';
+    import { add_layers_to_map } from '/static/dist/map-layers.js';
 
     window.add_map = function (element_id, geojson, options = {}) {
         let map = L.map(element_id, {

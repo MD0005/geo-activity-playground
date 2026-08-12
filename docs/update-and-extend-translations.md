@@ -92,13 +92,22 @@ For a better editing experience, consider using a dedicated PO editor like [Poed
 
 ## Compiling Translations
 
-After editing `.po` files, compile them into binary `.mo` files:
+The binary `.mo` files that Flask-Babel reads at runtime are not committed to
+the repository — they're compiled automatically by a Hatchling build hook
+(`hatch_build.py`) every time the project is built (`uv sync` or `uv build`).
+After editing `.po` files, run:
+
+```bash
+uv sync --reinstall-package geo-activity-playground
+```
+
+to force a rebuild (a plain `uv sync` only reruns the hook when it detects
+the project itself needs re-syncing). If you just want to check the compiled
+output without a full rebuild, you can still compile manually:
 
 ```bash
 uv run pybabel compile -d src/geo_activity_playground/webui/translations
 ```
-
-This must be done before the translations take effect. The `.mo` files are what Flask-Babel reads at runtime.
 
 ## Testing Translations
 

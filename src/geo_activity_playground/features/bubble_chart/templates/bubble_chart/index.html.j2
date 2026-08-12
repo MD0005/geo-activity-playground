@@ -145,7 +145,7 @@
     </div>
 </div>
 
-<script>
+<script type="module">
     function embedBubbleChart(targetSelector, chartSpec, urlField) {
         vegaEmbed(targetSelector, chartSpec).then((result) => {
             result.view.addEventListener('click', (event, item) => {

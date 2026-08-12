@@ -1,3 +1,5 @@
+import L from "leaflet";
+
 function makeProgressMarkerSvg(progress, small) {
     const clamped = Math.min(Math.max(progress ?? 0, 0), 1);
     const size = small ? 16 : 24;
@@ -25,7 +27,7 @@ function makeProgressMarkerSvg(progress, small) {
     `;
 }
 
-function progressMarkerIcon(progress, isEighth) {
+export function progressMarkerIcon(progress, isEighth) {
     const small = !!isEighth;
     const size = small ? 16 : 24;
     return L.divIcon({
@@ -35,5 +37,3 @@ function progressMarkerIcon(progress, isEighth) {
         iconAnchor: [size / 2, size / 2]
     });
 }
-
-window.progressMarkerIcon = progressMarkerIcon;

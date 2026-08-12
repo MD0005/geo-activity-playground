@@ -1,3 +1,5 @@
+import L from "leaflet";
+
 /**
  * Adds base and overlay tile layers to a Leaflet map with layer control.
  * 

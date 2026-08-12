@@ -116,7 +116,7 @@
         {% endif %}
         <div id="activity-show-map" style="height: 500px;" class="mb-3"></div>
         <script type="module">
-            import { add_layers_to_map } from '/static/map-layers.js';
+            import { add_layers_to_map } from '/static/dist/map-layers.js';
 
             var map = L.map('activity-show-map', {
                 fullscreenControl: true
@@ -519,7 +519,7 @@
 </style>
 
 <script type="module">
-    import { add_layers_to_map } from '/static/map-layers.js';
+    import { add_layers_to_map } from '/static/dist/map-layers.js';
 
     const attribution = '{{ map_tile_attribution|safe }}';
     const trackGeojson = {{ color_line_geojson | safe }};

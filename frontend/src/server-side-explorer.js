@@ -1,4 +1,5 @@
-import { add_layers_to_map } from '/static/map-layers.js';
+import L from "leaflet";
+import { add_layers_to_map } from "./map-layers.js";
 
 /**
  * Initialize the explorer map.

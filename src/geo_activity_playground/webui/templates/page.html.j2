@@ -10,13 +10,6 @@
 
     <title>{{ _('Geo Activity Playground') }}</title>
 
-    <!-- Bootstrap CSS. -->
-    <link href="/static/bootstrap/bootstrap.min.css" rel="stylesheet">
-
-    <!-- Leaflet for interactive maps. -->
-    <link rel="stylesheet" href="/static/leaflet/leaflet.css" />
-    <script src="/static/leaflet/leaflet.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/leaflet-relief@1.5.0/dist/leaflet-relief.min.js"></script>
     <script>
         window.gapHillshade = {
             opacity: {{ hillshade_opacity | tojson }},
@@ -24,26 +17,8 @@
         };
     </script>
 
-    <!-- Fullscreen button for Leaflet. -->
-    <link href='/static/leaflet/leaflet.fullscreen.css' rel='stylesheet' />
-    <script src='/static/leaflet/Leaflet.fullscreen.min.js'></script>
-
-    <link rel="stylesheet" href="/static/leaflet/MarkerCluster.css" />
-    <link rel="stylesheet" href="/static/leaflet/MarkerCluster.Default.css" />
-    <link rel="stylesheet" href="/static/site.css" />
-    <script src="/static/leaflet/leaflet.markercluster.js"></script>
-
-    <script src="/static/leaflet/leaflet-simplestyle.min.js"></script>
-    <script src="/static/progress-markers.js"></script>
-
-    <!-- Vega for plots.-->
-    <script src="/static/vega/vega@6.js"></script>
-    <script src="/static/vega/vega-lite@6.js"></script>
-    <script src="/static/vega/vega-embed@7.js"></script>
-
-    <script src="/static/bootstrap/bootstrap-dark-mode.js"></script>
-
-    <script src="/static/table-sort.min.js"></script>
+    <link rel="stylesheet" href="/static/dist/app.css">
+    <script type="module" src="/static/dist/app.js"></script>
 
     <!-- Favicon. -->
     <link rel="apple-touch-icon" sizes="180x180" href="/static/favicons/apple-touch-icon.png">
@@ -268,8 +243,6 @@
             </ul>
         </div>
     </div>
-
-    <script src="/static/bootstrap/bootstrap.bundle.min.js"></script>
 </body>
 
 </html>
