@@ -293,5 +293,12 @@ def get_tile_styles() -> dict[TileStyleName, TileStyle]:
         rows[name] = TileStyle(name=name, **TILE_STYLE_DEFAULTS[name])
         DB.session.add(rows[name])
     if missing:
-        DB.session.commit()
+        try:
+            DB.session.commit()
+        except sa.exc.IntegrityError:
+            # A concurrent request may have inserted the same rows first.
+            DB.session.rollback()
+            rows = {
+                row.name: row for row in DB.session.scalars(sa.select(TileStyle)).all()
+            }
     return {name: rows[name] for name in TileStyleName}
