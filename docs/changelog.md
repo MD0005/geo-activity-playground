@@ -17,6 +17,11 @@ Types of changes
 
 ## Unreleased
 
+Changed:
+
+- The `latest_new` explorer color strategy is now a standalone layer: it fills every visited tile and shades tiles that were already clustered before the activity with a new `old_cluster` style, so it no longer needs another color strategy layered underneath it to be readable.
+- The tile rendering settings page groups the tile styles into “Tile state”, “Cluster layer”, and “Activity highlight layer”, so it is clearer which styles are always used the same way and which ones belong together as one color strategy.
+
 Fixed:
 
 - Discard corrupted legacy heatmap cache files during the startup import into the database instead of aborting the whole import and re-logging the same error on every startup.

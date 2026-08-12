@@ -22,8 +22,10 @@ from ...core.tile_visits import (
     get_latest_new_tiles_activity_id,
 )
 from .clustering import (
+    get_cluster_history_cutoff_for_activity,
     get_cluster_history_latest_event_index,
     get_cluster_membership_in_bounds,
+    get_cluster_tiles_at_cutoff,
     get_cluster_tiles_gained_by_activity,
     get_max_cluster,
 )
@@ -412,20 +414,34 @@ class VisitedColorStrategy(ColorStrategy):
 
 
 class ActivityHighlightColorStrategy(ColorStrategy):
-    """Highlight what one activity changed: new tiles and cluster growth."""
+    """Standalone layer: cluster context plus what one activity changed.
+
+    Tiles that already belonged to a cluster before the activity are drawn
+    with ``OLD_CLUSTER``, other visited tiles with ``VISITED``, and on top of
+    that the tiles the activity newly discovered or newly clustered get their
+    own nested border, so the layer needs no other layer underneath it.
+    """
 
     def __init__(
         self,
         new_tiles: AbstractSet[tuple[int, int]],
         cluster_gained: AbstractSet[tuple[int, int]],
+        old_cluster_tiles: AbstractSet[tuple[int, int]],
+        tile_visits,
         styles: TileStyleSpecs,
     ):
         self._new_tiles = new_tiles
         self._cluster_gained = cluster_gained
+        self._old_cluster_tiles = old_cluster_tiles
+        self.tile_visits = tile_visits
         self._styles = styles
 
     def color(self, tile_xy: tuple[int, int]) -> TilePattern | None:
         names = []
+        if tile_xy in self._old_cluster_tiles:
+            names.append(TileStyleName.OLD_CLUSTER)
+        elif tile_xy in self.tile_visits:
+            names.append(TileStyleName.VISITED)
         if tile_xy in self._new_tiles:
             names.append(TileStyleName.NEW_TILE)
         if tile_xy in self._cluster_gained:
@@ -467,8 +483,10 @@ class SquarePlannerColorStrategy(ColorStrategy):
 @functools.lru_cache(maxsize=32)
 def _activity_highlight_tiles(
     zoom: int, activity_id: int, history_version: int
-) -> tuple[frozenset[tuple[int, int]], frozenset[tuple[int, int]]]:
-    """New and newly clustered tiles of one activity.
+) -> tuple[
+    frozenset[tuple[int, int]], frozenset[tuple[int, int]], frozenset[tuple[int, int]]
+]:
+    """New tiles, newly clustered tiles, and pre-existing cluster tiles.
 
     Both lookups are indexed queries, but a viewport asks for many tile images
     at once, so the cache saves the repeated round trips. The history version is
@@ -479,7 +497,15 @@ def _activity_highlight_tiles(
         for tile_visit in get_first_visits_for_activity(activity_id, zoom)
     )
     cluster_gained = get_cluster_tiles_gained_by_activity(zoom, activity_id)
-    return new_tiles, frozenset(cluster_gained)
+    first_event, _last_event = get_cluster_history_cutoff_for_activity(
+        zoom, activity_id
+    )
+    old_cluster_tiles = (
+        get_cluster_tiles_at_cutoff(zoom, first_event - 1)
+        if first_event is not None
+        else set()
+    )
+    return new_tiles, frozenset(cluster_gained), frozenset(old_cluster_tiles)
 
 
 def _tile_bounds(zoom: int, z: int, x: int, y: int) -> Bounds:
@@ -557,11 +583,15 @@ def _resolve_color_strategy(
                 "activity_id", type=int
             ) or get_latest_new_tiles_activity_id(zoom)
             if activity_id is None:
-                return ActivityHighlightColorStrategy(set(), set(), styles)
-            new_tiles, cluster_gained = _activity_highlight_tiles(
+                return ActivityHighlightColorStrategy(
+                    set(), set(), set(), tile_visits, styles
+                )
+            new_tiles, cluster_gained, old_cluster_tiles = _activity_highlight_tiles(
                 zoom, activity_id, get_cluster_history_latest_event_index(zoom)
             )
-            return ActivityHighlightColorStrategy(new_tiles, cluster_gained, styles)
+            return ActivityHighlightColorStrategy(
+                new_tiles, cluster_gained, old_cluster_tiles, tile_visits, styles
+            )
         case "square_planner":
             return SquarePlannerColorStrategy(
                 tile_visits,

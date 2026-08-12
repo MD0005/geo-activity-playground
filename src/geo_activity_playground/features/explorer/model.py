@@ -215,6 +215,7 @@ class TileStyleName(StrEnum):
     NEW_CLUSTER = "new_cluster"
     MAX_CLUSTER = "max_cluster"
     OTHER_CLUSTER = "other_cluster"
+    OLD_CLUSTER = "old_cluster"
     INACCESSIBLE = "inaccessible"
 
 
@@ -279,6 +280,7 @@ TILE_STYLE_DEFAULTS: dict[TileStyleName, dict[str, str | int]] = {
     TileStyleName.NEW_CLUSTER: _defaults(border_color="#0066ffff"),
     TileStyleName.MAX_CLUSTER: _defaults(fill_color="#377eb84d"),
     TileStyleName.OTHER_CLUSTER: _defaults(fill_color="#4daf4a4d"),
+    TileStyleName.OLD_CLUSTER: _defaults(fill_color="#9966cc4d"),
     TileStyleName.INACCESSIBLE: _defaults(stripe_color="#80808099"),
 }
 

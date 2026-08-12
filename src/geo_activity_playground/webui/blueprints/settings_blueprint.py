@@ -583,8 +583,46 @@ def make_settings_blueprint(
             TileStyleName.NEW_CLUSTER: _("New cluster in this activity"),
             TileStyleName.MAX_CLUSTER: _("Part of max cluster"),
             TileStyleName.OTHER_CLUSTER: _("Part of other cluster"),
+            TileStyleName.OLD_CLUSTER: _("Part of cluster before this activity"),
             TileStyleName.INACCESSIBLE: _("Inaccessible"),
         }
+        groups = [
+            (
+                _("Tile state"),
+                _(
+                    "These roles mean the same thing in every color strategy that "
+                    "uses them: whether a tile has been visited at all, is missing, "
+                    "or was marked inaccessible."
+                ),
+                [
+                    TileStyleName.VISITED,
+                    TileStyleName.MISSING,
+                    TileStyleName.INACCESSIBLE,
+                ],
+            ),
+            (
+                _("Cluster layer"),
+                _(
+                    "Used together by the “Max Cluster” color strategy to set apart "
+                    "the largest cluster from the rest."
+                ),
+                [TileStyleName.MAX_CLUSTER, TileStyleName.OTHER_CLUSTER],
+            ),
+            (
+                _("Activity highlight layer"),
+                _(
+                    "Used together by the “New Tiles & Cluster Growth” color "
+                    "strategy to show what one activity changed: newly visited "
+                    "tiles, tiles that newly joined a cluster, and tiles that were "
+                    "already part of a cluster before."
+                ),
+                [
+                    TileStyleName.NEW_TILE,
+                    TileStyleName.NEW_CLUSTER,
+                    TileStyleName.OLD_CLUSTER,
+                ],
+            ),
+        ]
         styles = get_tile_styles()
 
         if request.method == "POST":
@@ -608,28 +646,36 @@ def make_settings_blueprint(
             config_accessor.save()
             flash(_("Updated tile rendering."), category="success")
 
+        def entry(name: TileStyleName) -> dict:
+            style = styles[name]
+            return {
+                "name": name,
+                "label": labels[name],
+                "style": style,
+                "default_colors": {
+                    element: _split_hex_into_color_alpha(
+                        TILE_STYLE_DEFAULTS[name][f"{element}_color"]
+                    )
+                    for element in ("fill", "border", "stripe")
+                },
+                "defaults": TILE_STYLE_DEFAULTS[name],
+                "colors": {
+                    element: _split_hex_into_color_alpha(
+                        getattr(style, f"{element}_color")
+                    )
+                    for element in ("fill", "border", "stripe")
+                },
+            }
+
         return render_template(
             "settings/tile-rendering.html.j2",
-            tile_styles=[
+            tile_style_groups=[
                 {
-                    "name": name,
-                    "label": labels[name],
-                    "style": style,
-                    "default_colors": {
-                        element: _split_hex_into_color_alpha(
-                            TILE_STYLE_DEFAULTS[name][f"{element}_color"]
-                        )
-                        for element in ("fill", "border", "stripe")
-                    },
-                    "defaults": TILE_STYLE_DEFAULTS[name],
-                    "colors": {
-                        element: _split_hex_into_color_alpha(
-                            getattr(style, f"{element}_color")
-                        )
-                        for element in ("fill", "border", "stripe")
-                    },
+                    "label": group_label,
+                    "description": description,
+                    "entries": [entry(name) for name in names],
                 }
-                for name, style in styles.items()
+                for group_label, description, names in groups
             ],
             border_strokes=[
                 (BorderStroke.SOLID, _("Solid")),

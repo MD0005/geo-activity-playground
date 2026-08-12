@@ -10,13 +10,16 @@
 <p>{{ _('Each named tile is drawn with an optional fill, a border, and optional diagonal stripes. A tile that belongs to several categories at once shows one border per category, nested from the outside in. Setting the alpha channel to zero switches an element off.') }}</p>
 
 <form method="POST">
-    {% for entry in tile_styles %}
+    {% for group in tile_style_groups %}
+    <h2 class="h4 mt-4">{{ group.label }}</h2>
+    <p class="text-muted">{{ group.description }}</p>
+    {% for entry in group.entries %}
     {% set name = entry.name %}
     <div class="card mb-3">
         <div class="card-body">
             <div class="row g-3">
                 <div class="col-md-3">
-                    <h2 class="h5">{{ entry.label }}</h2>
+                    <h3 class="h5">{{ entry.label }}</h3>
                     <img id="{{ name }}_preview" class="img-fluid border" width="128" height="128"
                         alt="{{ _('Preview') }}" />
                     <p class="mt-2 mb-0">
@@ -63,6 +66,7 @@
         </div>
     </div>
     {% endfor %}
+    {% endfor %}
 
     <div class="mb-3">
         <label for="cmap_opacity" class="form-label">{{ _('Color map opacity') }}</label>
@@ -75,7 +79,7 @@
 </form>
 
 <script>
-    const tileStyleNames = {{ tile_styles | map(attribute = 'name') | list | tojson }};
+    const tileStyleNames = {{ tile_style_groups | map(attribute = 'entries') | sum(start=[]) | map(attribute = 'name') | list | tojson }};
 
     function updatePreview(name) {
         const value = id => document.getElementById(`${name}_${id}`).value;
