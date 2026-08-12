@@ -42,7 +42,7 @@ It is also less suitable for managing a family fleet, because for it to work pro
 
 ### Recurring tasks
 
-1. Go to *Statistics → Equipment*.
+1. Go to *Gear → Equipment*.
 2. Go into one of your equipments.
 3. Select *Add task*.
 4. Assign a name and specify whether the task should recur every *x* kilometers and/or every *y* days.
@@ -51,14 +51,14 @@ In the equipment section you can then see which tasks have been performed and wh
 
 ### Maintenance actions
 
-1. Go to *Statistics → Equipment*.
+1. Go to *Gear → Equipment*.
 2. Go into one of your equipments.
 3. Select *Add action*.
 4. Enter all relevant details and attach a photo.
 
 ## Statistics
 
-Under *Statistics → Maintenance* you find your maintenance statistics. These display metrics such as annual costs or costs per bike.
+Under *Gear → Maintenance* you find your maintenance statistics. These display metrics such as annual costs or costs per bike.
 
 ## Notes
 

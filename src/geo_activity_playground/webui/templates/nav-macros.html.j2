@@ -1,0 +1,35 @@
+{# Shared active-state helpers for the main navigation and the settings sidebar.
+
+   A navigation entry is a dict with:
+     endpoint: the Flask endpoint to link to
+     label:    the user facing text
+     args:     optional url_for() parameters that also have to match the request
+     match:    optional list of further endpoints; a trailing dot matches a prefix
+#}
+
+{# Yields "active" when the current request matches this entry. #}
+{% macro nav_active(item) %}
+    {%- set current = request.endpoint or '' -%}
+    {%- set view_args = request.view_args or {} -%}
+    {%- set state = namespace(hit=(current == item.endpoint)) -%}
+    {%- for pattern in item.get('match') or [] -%}
+        {%- if current == pattern or (pattern.endswith('.') and current.startswith(pattern)) -%}
+            {%- set state.hit = true -%}
+        {%- endif -%}
+    {%- endfor -%}
+    {%- if state.hit -%}
+        {%- for key, value in (item.get('args') or {}).items() -%}
+            {%- if view_args.get(key) != value -%}
+                {%- set state.hit = false -%}
+            {%- endif -%}
+        {%- endfor -%}
+    {%- endif -%}
+    {{- 'active' if state.hit else '' -}}
+{% endmacro %}
+
+{# Yields "active" when any entry of a group matches. #}
+{% macro nav_group_active(group) %}
+    {%- for item in group.entries -%}
+        {%- if not item.get('divider') and nav_active(item) | trim -%}active{%- endif -%}
+    {%- endfor -%}
+{% endmacro %}

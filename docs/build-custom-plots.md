@@ -2,7 +2,7 @@
 
 Activity data can be visualized in lots of ways. Every user want to have slightly different visualizations. Hence since version 0.40.0 you can define your own plots using the interactive plot builder.
 
-Using the JSON codes one can share plots with other users. You can import them in the plot builder. Go to “Admin” → “Plot Builder” and click on “Import”. Paste the code snippet and it will import the plot specification and generate the same from your data.
+Using the JSON codes one can share plots with other users. You can import them in the plot builder. Go to “Settings” → “Plot Builder” and click on “Import”. Paste the code snippet and it will import the plot specification and generate the same from your data.
 
 ## Example gallery
 

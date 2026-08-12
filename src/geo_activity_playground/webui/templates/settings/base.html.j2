@@ -1,4 +1,5 @@
 {% extends "page.html.j2" %}
+{% from "nav-macros.html.j2" import nav_active with context %}
 
 {# Navigation structure for settings pages #}
 {% set settings_nav = [
@@ -37,7 +38,8 @@
         "group": _("Analysis"),
         "entries": [
             {"endpoint": "settings.segmentation", "label": _("Track Segmentation"), "icon": "✂️"},
-            {"endpoint": "plot_builder.index", "label": _("Plot Builder"), "icon": "📊"},
+            {"endpoint": "plot_builder.index", "label": _("Plot Builder"), "icon": "📊",
+             "match": ["plot_builder."]},
         ]
     },
     {
@@ -49,8 +51,10 @@
     {
         "group": _("Management"),
         "entries": [
-            {"endpoint": "settings.manage_kinds", "label": _("Activity Kinds"), "icon": "🏃"},
-            {"endpoint": "settings.tags_list", "label": _("Tags"), "icon": "🏷️"},
+            {"endpoint": "settings.manage_kinds", "label": _("Activity Kinds"), "icon": "🏃",
+             "match": ["settings.kinds_new", "settings.kinds_edit", "settings.kinds_delete"]},
+            {"endpoint": "settings.tags_list", "label": _("Tags"), "icon": "🏷️",
+             "match": ["settings.tags_new", "settings.tags_edit"]},
         ]
     },
     {
@@ -69,20 +73,6 @@
         ]
     },
 ] %}
-
-{# Helper macro to check if current page is within a nav item's scope #}
-{% macro is_active(endpoint) %}
-    {%- set current = request.endpoint -%}
-    {%- if current == endpoint -%}
-        active
-    {%- elif endpoint == 'settings.tags_list' and current in ['settings.tags_list', 'settings.tags_new', 'settings.tags_edit'] -%}
-        active
-    {%- elif endpoint == 'settings.manage_kinds' and current in ['settings.manage_kinds', 'settings.kinds_new', 'settings.kinds_edit', 'settings.kinds_delete'] -%}
-        active
-    {%- elif endpoint == 'plot_builder.index' and current and current.startswith('plot_builder.') -%}
-        active
-    {%- endif -%}
-{% endmacro %}
 
 {% block container %}
 <div class="row">
@@ -115,9 +105,9 @@
             <ul class="nav nav-pills flex-column mb-2">
                 {% for item in group.entries %}
                 <li class="nav-item">
-                    <a class="nav-link py-1 px-2 {{ is_active(item.endpoint) }}" 
+                    <a class="nav-link py-1 px-2 {{ nav_active(item) | trim }}"
                        href="{{ url_for(item.endpoint) }}"
-                       {% if is_active(item.endpoint) %}aria-current="page"{% endif %}>
+                       {% if nav_active(item) | trim %}aria-current="page"{% endif %}>
                         <span class="me-2">{{ item.icon }}</span>{{ item.label }}
                     </a>
                 </li>

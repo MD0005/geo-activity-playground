@@ -31,6 +31,8 @@ Changed:
 - Use a bundler for all external ES resources.
 - Stop recomputing tile visits and explorer tile state every 50 activities during the directory import.
 - Group the "Explorer Levels" (previously "Explorer Zoom Levels"), "Counted Activities" (split out of "Explorer Tiles"), "Inaccessible Tiles" (previously "Explorer Tiles"), and "Tile Coloring" (previously "Tile Rendering") settings pages under their own "Explorer Tiles" section in the settings navigation, instead of scattering them across "Display".
+- Regroup the main navigation.
+- Highlight the current page in the main navigation.
 
 Fixed:
 

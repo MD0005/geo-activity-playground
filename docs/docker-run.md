@@ -27,7 +27,7 @@ If you want ot open GAP to your local network, use `-p 5000:5000`.
 Note that port 5000 may not be available on macOS because of AirPlay, so you can map to another host port e.g. `-p 127.0.0.1:8000:5000`.  
 Then you can open `http://127.0.0.1:8000/` in your browser.  
 
-Quit with `CTRL+C` in the terminal or with the `Admin > Shutdown Server` menu in the Web UI.  
+Quit with `CTRL+C` in the terminal or with the shutdown button (⏻) at the right end of the navigation bar in the Web UI.  
 
 ### Long running container
 

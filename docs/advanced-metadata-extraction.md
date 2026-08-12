@@ -28,7 +28,7 @@ re.search(r'(?P<kind>[^/]+)/(?P<equipment>[^/]+)/(?P<name>[^/.]+)', '/Ride/Trekk
 {'kind': 'Ride', 'equipment': 'Trekking Bike', 'name': '2024-03-03-17-42-10 Home to Bakery'}
 ```
 
-You can add your custom regular expressions under the `Admin` menu - `Settings` - `Metadata Extraction` in the WebUI.
+You can add your custom regular expressions under `Settings` - `Metadata Extraction` in the WebUI.
 Settings are saved in your `Playground` directory.
 
 ### Filename as Name (simple)
@@ -141,4 +141,4 @@ Activities/
 ## Next Steps
 
 If you you manually rename, move or delete your activity files, the program needs to reload to respect these changes.
-You can restart the program or visit `Scan New Activities` in the admin menu of the WebUI.
+You can restart the program or visit `Scan New Activities` in the `Data` menu of the WebUI.
