@@ -8,7 +8,6 @@ import requests
 import sqlalchemy
 from tqdm import tqdm
 
-from ...core.activities import ActivityRepository
 from ...core.datamodel import DB, Activity, ActivityImportConfig, get_or_make_kind
 from ...core.enrichment import update_and_commit
 from ...core.import_exclusion import is_excluded, record_exclusion
@@ -98,15 +97,12 @@ def _apply_token_response(auth: HammerheadAuth, payload: dict) -> None:
 
 def import_from_hammerhead_api(
     config: ActivityImportConfig,
-    repository: ActivityRepository,
     hammerhead_begin: str | None = None,
     hammerhead_end: str | None = None,
     source: str | None = None,
 ) -> None:
     try:
-        while _try_import_hammerhead(
-            config, repository, hammerhead_begin, hammerhead_end, source
-        ):
+        while _try_import_hammerhead(config, hammerhead_begin, hammerhead_end, source):
             logger.warning("Hammerhead rate limit hit; sleeping for 60 seconds.")
             time.sleep(60)
     except HammerheadAuthError as e:
@@ -119,7 +115,6 @@ def import_from_hammerhead_api(
 
 def _try_import_hammerhead(
     config: ActivityImportConfig,
-    repository: ActivityRepository,
     hammerhead_begin: str | None,
     hammerhead_end: str | None,
     source: str | None = None,

@@ -25,6 +25,7 @@ Changed:
   - On the settings page, the different styles are grouped by the layer that use them.
 - Docker images are now built by installing the published PyPI release directly instead of from a source checkout, so they always reflect a stable, already-tested release.
 - Use a bundler for all external ES resources.
+- Stop recomputing tile visits and explorer tile state every 50 activities during the directory import.
 
 Fixed:
 

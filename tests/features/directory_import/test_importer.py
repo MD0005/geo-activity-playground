@@ -3,7 +3,6 @@ import shutil
 
 import sqlalchemy
 
-from geo_activity_playground.core.activities import ActivityRepository
 from geo_activity_playground.core.config import ConfigAccessor
 from geo_activity_playground.core.datamodel import DB, Activity
 from geo_activity_playground.core.import_exclusion import (
@@ -18,12 +17,7 @@ from geo_activity_playground.features.directory_import.importer import (
 
 def _scan() -> None:
     accessor = ConfigAccessor()
-    import_from_directory(
-        ActivityRepository(),
-        accessor.activity_import(),
-        accessor.ui(),
-        source="directory",
-    )
+    import_from_directory(accessor.activity_import(), source="directory")
 
 
 def test_deleted_activity_is_not_imported_again(
@@ -64,11 +58,8 @@ def test_broken_file_is_recorded_and_skipped_until_changed(app_context) -> None:
     path.write_text("not a real activity file")
 
     accessor = ConfigAccessor()
-    repository = ActivityRepository()
 
-    import_from_directory(
-        repository, accessor.activity_import(), accessor.ui(), source="directory"
-    )
+    import_from_directory(accessor.activity_import(), source="directory")
 
     broken = DB.session.scalar(sqlalchemy.select(ImportExclusion))
     assert broken is not None
@@ -78,9 +69,7 @@ def test_broken_file_is_recorded_and_skipped_until_changed(app_context) -> None:
     first_attempt = broken.last_attempt
 
     # A second scan of the unchanged file must not touch the record.
-    import_from_directory(
-        repository, accessor.activity_import(), accessor.ui(), source="directory"
-    )
+    import_from_directory(accessor.activity_import(), source="directory")
     DB.session.expire_all()
     broken_again = DB.session.scalar(sqlalchemy.select(ImportExclusion))
     assert broken_again is not None
@@ -88,9 +77,7 @@ def test_broken_file_is_recorded_and_skipped_until_changed(app_context) -> None:
 
     # Once the file's content changes, it is retried and the record refreshed.
     path.write_text("still broken, but different content this time")
-    import_from_directory(
-        repository, accessor.activity_import(), accessor.ui(), source="directory"
-    )
+    import_from_directory(accessor.activity_import(), source="directory")
     DB.session.expire_all()
     broken_third = DB.session.scalars(sqlalchemy.select(ImportExclusion)).all()
     assert len(broken_third) == 1

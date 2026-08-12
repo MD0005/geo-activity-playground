@@ -48,7 +48,7 @@ def scan_for_activities(
             begin = None
             end = None
 
-        activity_source.import_activities(config_accessor, repository, begin, end)
+        activity_source.import_activities(config_accessor, begin, end)
 
     import_photos_from_directory()
 
