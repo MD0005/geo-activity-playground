@@ -41,8 +41,10 @@
                             {% if execution.usage_km is not none %} &middot; {{ execution.usage_km }} km{% endif %}
                             {% if execution.comment %} &middot; {{ execution.comment }}{% endif %}
                             {% if is_authenticated %}
-                            <a href="{{ url_for('maintenance.delete_execution', id=execution.id) }}"
-                                onclick="if(!confirm('{{ _('Delete this task execution?') }}')){ event.preventDefault() }">{{ _('Delete') }}</a>
+                            <form method="post" action="{{ url_for('maintenance.delete_execution', id=execution.id) }}" class="d-inline">
+                                <button type="submit" class="btn btn-link p-0 border-0 align-baseline"
+                                    onclick="if(!confirm('{{ _('Delete this task execution?') }}')){ event.preventDefault() }">{{ _('Delete') }}</button>
+                            </form>
                             {% endif %}
                         </li>
                         {% endfor %}
@@ -54,8 +56,10 @@
             <div class="text-nowrap">
                 <a class="btn btn-sm btn-success" href="{{ url_for('maintenance.execute_task', id=task.id) }}">{{ _('Mark done') }}</a>
                 <a class="btn btn-sm btn-secondary" href="{{ url_for('maintenance.edit_task', id=task.id) }}">{{ _('Edit') }}</a>
-                <a class="btn btn-sm btn-danger" href="{{ url_for('maintenance.delete_task', id=task.id) }}"
-                    onclick="if(!confirm('{{ _('Delete this recurring task?') }}')){ event.preventDefault() }">{{ _('Delete') }}</a>
+                <form method="post" action="{{ url_for('maintenance.delete_task', id=task.id) }}" class="d-inline">
+                    <button type="submit" class="btn btn-sm btn-danger"
+                        onclick="if(!confirm('{{ _('Delete this recurring task?') }}')){ event.preventDefault() }">{{ _('Delete') }}</button>
+                </form>
             </div>
             {% endif %}
         </div>

@@ -1,0 +1,27 @@
+{% extends "settings/base.html.j2" %}
+
+{% block breadcrumbs %}
+<li class="breadcrumb-item active" aria-current="page">{{ _('Explorer Zoom Levels') }}</li>
+{% endblock %}
+
+{% block settings_content %}
+<h1 class="mb-3">{{ _('Explorer Zoom Levels') }}</h1>
+
+<p>{{ _('Choose the zoom levels for which explorer tiles, clusters, and squares are computed. Each enabled level gets its own page in the Explorer menu, its own map overlays, and its own square planner.') }}</p>
+
+<p>{{ _('Zoom 14 are the classic explorer tiles, zoom 17 are the squadratinhos. Every additional level costs computation time on import and storage in the database; disabling a level discards its cluster and square history, but the recorded tile visits stay, so it can be enabled again later.') }}</p>
+
+<p>⚠️ {{ _('Each zoom level splits every tile into four, so the number of tiles quadruples per level. Zoom 18 is therefore about 4 times and zoom 19 about 16 times as compute and storage intense as zoom 17.') }}</p>
+
+<form method="POST">
+    {% for zoom, name, checked in zoom_levels %}
+    <div class="form-check form-switch">
+        <input class="form-check-input" type="checkbox" role="switch" id="zoom-{{ zoom }}" name="zoom"
+            value="{{ zoom }}" {{ 'checked' if checked else '' }} />
+        <label class="form-check-label" for="zoom-{{ zoom }}">{{ zoom }}{% if name %} ({{ name }}){% endif %}{% if zoom
+            >= 18 %} <span title="{{ _('%(factor)d times as compute intense as zoom 17.', factor=4 ** (zoom - 17)) }}">⚠️</span>{% endif %}</label>
+    </div>
+    {% endfor %}
+    <button type="submit" class="btn btn-primary mt-3">{{ _('Save') }}</button>
+</form>
+{% endblock %}

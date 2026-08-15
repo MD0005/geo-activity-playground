@@ -44,6 +44,24 @@ uv sync
 
 This is all what is needed regarding dependency management.
 
+### Node.js is required
+
+The webui's JavaScript/CSS bundle (Leaflet, Bootstrap, Vega, …) and the
+compiled `.mo` translation files are generated automatically as part of
+`uv sync`/`uv build`, not committed to the repository. This means Node.js and
+npm need to be on your `PATH` for `uv sync` to succeed — the same
+requirement `npm run docs:dev` already has for building this documentation
+site.
+
+A normal dev loop needs no manual build step: `uv sync` regenerates both the
+JS bundle and the translations. If you only change files under `frontend/`
+or a `.po` file, without touching `pyproject.toml`/`uv.lock`, `uv` won't
+detect that a resync is needed on its own; force one with:
+
+```bash
+uv sync --reinstall-package geo-activity-playground
+```
+
 ## Set up the pre-commit hook
 
 This project also uses [pre-commit](https://pre-commit.com/) to make sure that every commit is run through some formatters and checkers. If you only want to use the development version but not contribute, you can skip this section.

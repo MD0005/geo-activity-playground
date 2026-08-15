@@ -127,35 +127,48 @@ def import_legacy_heatmap_cache_from_filesystem() -> int:
         return 0
 
     imported = 0
+    corrupted = 0
     staged_entries: list[HeatmapTileCache] = []
-    try:
-        for npy_path in tqdm(
-            npy_paths, desc="Import heatmap cache", delay=1, leave=False
-        ):
-            zoom = int(npy_path.parent.parent.name)
-            tile_x = int(npy_path.parent.name)
-            tile_y = int(npy_path.stem)
+    for npy_path in tqdm(npy_paths, desc="Import heatmap cache", delay=1, leave=False):
+        zoom = int(npy_path.parent.parent.name)
+        tile_x = int(npy_path.parent.name)
+        tile_y = int(npy_path.stem)
 
-            existing = get_tile_cache(
-                zoom=zoom, tile_x=tile_x, tile_y=tile_y, search_query_id=None
-            )
-            if existing is not None:
-                continue
+        existing = get_tile_cache(
+            zoom=zoom, tile_x=tile_x, tile_y=tile_y, search_query_id=None
+        )
+        if existing is not None:
+            npy_path.unlink(missing_ok=True)
+            npy_path.with_suffix(".json").unlink(missing_ok=True)
+            continue
 
+        try:
             counts = np.load(npy_path, allow_pickle=False)
             parsed_activities = _load_legacy_included_activity_ids(
                 npy_path.with_suffix(".json")
             )
-            staged_entries.append(
-                _build_heatmap_cache_entry(
-                    zoom=zoom,
-                    tile_x=tile_x,
-                    tile_y=tile_y,
-                    counts=counts_to_blob(counts),
-                    included_activity_ids=parsed_activities,
-                )
+        except Exception:
+            logger.warning(
+                "Legacy heatmap cache file %s is corrupted; deleting it. "
+                "It will be regenerated on demand.",
+                npy_path,
             )
+            npy_path.unlink(missing_ok=True)
+            npy_path.with_suffix(".json").unlink(missing_ok=True)
+            corrupted += 1
+            continue
 
+        staged_entries.append(
+            _build_heatmap_cache_entry(
+                zoom=zoom,
+                tile_x=tile_x,
+                tile_y=tile_y,
+                counts=counts_to_blob(counts),
+                included_activity_ids=parsed_activities,
+            )
+        )
+
+    try:
         if staged_entries:
             DB.session.add_all(staged_entries)
         DB.session.commit()
@@ -163,14 +176,18 @@ def import_legacy_heatmap_cache_from_filesystem() -> int:
     except Exception:
         DB.session.rollback()
         logger.exception(
-            "Failed importing legacy heatmap cache from filesystem; keeping files in place."
+            "Failed importing legacy heatmap cache from filesystem; keeping remaining files in place."
         )
         return 0
 
-    shutil.rmtree(heatmap_cache_dir)
+    for npy_path in npy_paths:
+        npy_path.unlink(missing_ok=True)
+        npy_path.with_suffix(".json").unlink(missing_ok=True)
+    shutil.rmtree(heatmap_cache_dir, ignore_errors=True)
     logger.info(
-        "Imported %d legacy heatmap tiles into DB and removed %s.",
+        "Imported %d legacy heatmap tiles into DB (%d corrupted files discarded) and removed %s.",
         imported,
+        corrupted,
         heatmap_cache_dir,
     )
     return imported

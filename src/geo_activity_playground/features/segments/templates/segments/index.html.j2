@@ -26,8 +26,10 @@
                     {{ _('Re-match') }}
                 </button>
             </form>
-            <a class="btn btn-sm btn-danger" href="{{ url_for('.delete', id=segment.id) }}"
-                onclick="if(!confirm('{{ _('Are you sure to delete this segment?') }}')){event.preventDefault()}">{{ _('Delete') }}</a>
+            <form method="post" action="{{ url_for('.delete', id=segment.id) }}" class="d-inline">
+                <button type="submit" class="btn btn-sm btn-danger"
+                    onclick="if(!confirm('{{ _('Are you sure to delete this segment?') }}')){event.preventDefault()}">{{ _('Delete') }}</button>
+            </form>
         </div>
     </div>
     {% endfor %}

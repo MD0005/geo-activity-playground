@@ -11,9 +11,9 @@ from stravalib import Client
 from stravalib.exc import Fault, ObjectNotFound, RateLimitExceeded
 from tqdm import tqdm
 
-from ...core.activities import ActivityRepository
 from ...core.config import ConfigAccessor
 from ...core.datamodel import DB, Activity, get_or_make_equipment, get_or_make_kind
+from ...core.duplicate_matching import check_for_duplicate
 from ...core.enrichment import update_and_commit
 from ...core.import_exclusion import is_excluded
 from ...core.paths import (
@@ -134,15 +134,12 @@ def _refresh_activity_names_from_strava_once(config: StravaConfig) -> int:
 
 def import_from_strava_api(
     config_accessor: ConfigAccessor,
-    repository: ActivityRepository,
     strava_begin: str | None = None,
     strava_end: str | None = None,
     source: str | None = None,
 ) -> None:
     try:
-        while try_import_strava(
-            config_accessor, repository, strava_begin, strava_end, source
-        ):
+        while try_import_strava(config_accessor, strava_begin, strava_end, source):
             now = datetime.datetime.now()
             next_quarter = round_to_next_quarter_hour(now)
             seconds_to_wait = (next_quarter - now).total_seconds() + 10
@@ -161,7 +158,6 @@ def import_from_strava_api(
 
 def try_import_strava(
     config_accessor: ConfigAccessor,
-    repository: ActivityRepository,
     strava_begin: str | None = None,
     strava_end: str | None = None,
     source: str | None = None,
@@ -269,6 +265,7 @@ def try_import_strava(
                 update_and_commit(
                     activity, time_series, config_accessor.activity_import()
                 )
+                check_for_duplicate(activity, config_accessor.activity_import())
                 logger.info(f"Added activity '{activity.name}' from Strava.")
 
             if strava_begin is None and strava_end is None:

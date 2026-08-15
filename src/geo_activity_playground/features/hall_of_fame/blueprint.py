@@ -2,24 +2,19 @@ import collections
 import logging
 
 import pandas as pd
-from flask import Blueprint, render_template, request
+from flask import Blueprint, render_template
 
-from ...core.activities import ActivityRepository, make_geojson_from_time_series
+from ...core.activities import make_geojson_from_time_series
 from ...core.config import ConfigAccessor
-from ...core.meta_search import (
-    apply_search_filter,
-    get_stored_queries,
-    parse_search_params,
-    primitives_to_jinja,
-    register_search_query,
-)
+from ...core.datamodel import get_activity_by_id, get_time_series
+from ...core.meta_search import apply_search_filter
 from ...webui.authenticator import Authenticator
+from ...webui.search_context import search_context
 
 logger = logging.getLogger(__name__)
 
 
 def make_hall_of_fame_blueprint(
-    repository: ActivityRepository,
     authenticator: Authenticator,
     config_accessor: ConfigAccessor,
 ) -> Blueprint:
@@ -28,40 +23,27 @@ def make_hall_of_fame_blueprint(
     @blueprint.route("/")
     def index() -> str:
         config = config_accessor.ui()
-        primitives = parse_search_params(request.args)
-
-        if authenticator.is_authenticated():
-            register_search_query(primitives)
+        primitives, search_vars = search_context(authenticator)
 
         activities = apply_search_filter(primitives)
         df = activities
 
         nominations = nominate_activities(df)
 
-        stored_queries = get_stored_queries()
-        search_query_favorites = [
-            (str(q), q.to_url_str()) for q in stored_queries if q.is_favorite
-        ]
-        search_query_last = [
-            (str(q), q.to_url_str()) for q in stored_queries if not q.is_favorite
-        ]
-
         return render_template(
             "hall_of_fame/index.html.j2",
             nominations=[
                 (
-                    repository.get_activity_by_id(activity_id),
+                    get_activity_by_id(activity_id),
                     reasons,
                     make_geojson_from_time_series(
-                        repository.get_time_series(activity_id),
+                        get_time_series(activity_id),
                         config.eighth_marker_min_distance_km,
                     ),
                 )
                 for activity_id, reasons in nominations.items()
             ],
-            query=primitives_to_jinja(primitives),
-            search_query_favorites=search_query_favorites,
-            search_query_last=search_query_last,
+            **search_vars,
         )
 
     return blueprint

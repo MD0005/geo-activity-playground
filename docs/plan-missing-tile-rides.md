@@ -26,6 +26,12 @@ Then plan a route that goes through as many tiles as possible. Download the rout
 
 Some missing tiles cannot be reached, say because they only contain water or restricted area. You can mark such tiles as inaccessible by clicking them on the explorer tile map. Tiles marked that way count as neither missing nor visited, so they are left out of the downloads described here as well as those of the square planner. Your routing app then doesn't suggest chasing them.
 
+Tiles are marked per zoom level, so marking a tile on the zoom 14 map does not mark the corresponding zoom 17 tiles.
+
+By default an inaccessible tile still blocks a cluster or a square from growing, because it is simply not covered. Under _Settings → Explorer Tiles_ you can let inaccessible tiles count toward cluster and square geometry. They never count as visited tiles, so your explored tile counts stay honest and the map keeps drawing them in the inaccessible style. Counting them is off by default, which is the stricter game.
+
+Inaccessible tiles are counted from the origin of time, as if they had always been covered. Switching this on therefore also changes the past in the cluster and square evolution plots.
+
 ## Square planner
 
 From the explorer tile views you can open the _square planner_ which allows you to see which tiles you need to explore in order to extend the square into a particular direction. The screen will open with the largest square that you have, then you can use the buttons to extend or move your square.

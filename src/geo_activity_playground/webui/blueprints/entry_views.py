@@ -10,9 +10,8 @@ from flask import render_template
 from flask.typing import ResponseReturnValue
 from flask_babel import gettext as _
 
-from ...core.activities import ActivityRepository
 from ...core.config import ConfigAccessor
-from ...core.datamodel import DB, Activity
+from ...core.datamodel import DB, Activity, count_activities, query_activity_meta
 from ...features.maintenance.stats import get_due_tasks
 from ..columns import (
     META_COLUMNS,
@@ -21,18 +20,16 @@ from ..columns import (
 from ..plot_util import make_kind_scale
 
 
-def register_entry_views(
-    app: flask.Flask, repository: ActivityRepository, config_accessor: ConfigAccessor
-) -> None:
+def register_entry_views(app: flask.Flask, config_accessor: ConfigAccessor) -> None:
     @app.route("/")
     def index() -> ResponseReturnValue:
         context: dict[str, Any] = {
             "latest_activities": [],
             "due_tasks": get_due_tasks(),
         }
-        df = repository.meta
+        df = query_activity_meta()
 
-        if len(repository):
+        if count_activities():
             kind_scale = make_kind_scale(df, config_accessor.ui())
             context["last_30_days_plot"] = {
                 column.display_name: _last_30_days_meta_plot(df, kind_scale, column)

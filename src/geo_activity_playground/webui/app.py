@@ -30,7 +30,6 @@ from flask_babel import Babel
 from markupsafe import Markup
 from werkzeug.middleware.proxy_fix import ProxyFix
 
-from ..core.activities import ActivityRepository
 from ..core.config import ConfigAccessor, import_config_json
 from ..core.currency import format_money
 from ..core.datamodel import (
@@ -40,6 +39,7 @@ from ..core.datamodel import (
     Equipment,
     Kind,
     Tag,
+    count_activities,
 )
 from ..core.db_maintenance import run_database_maintenance_if_due
 from ..core.heart_rate import HeartRateZoneComputer
@@ -64,6 +64,7 @@ from ..features.eddington.blueprint import register_eddington_blueprint
 from ..features.equipment.blueprint import make_equipment_blueprint
 from ..features.explorer.blueprint import make_explorer_blueprint
 from ..features.explorer.model import ExplorerTileBookmark  # noqa: F401
+from ..features.explorer.zoom_levels import explorer_zoom_level_label
 from ..features.explorer_video.video_blueprint import make_explorer_video_blueprint
 from ..features.hall_of_fame.blueprint import make_hall_of_fame_blueprint
 from ..features.hammerhead.model import get_hammerhead_auth
@@ -136,7 +137,7 @@ def _migrate_null_activity_fields_to_unknown() -> None:
         sqlalchemy.select(Kind).where(Kind.name == DEFAULT_UNKNOWN_NAME)
     )
     if unknown_kind is None:
-        unknown_kind = Kind(name=DEFAULT_UNKNOWN_NAME, consider_for_achievements=True)
+        unknown_kind = Kind(name=DEFAULT_UNKNOWN_NAME)
         DB.session.add(unknown_kind)
 
     unknown_equipment = DB.session.scalar(
@@ -290,7 +291,6 @@ def create_app(
             DB.create_all()
 
     # Set up dependencies
-    repository = ActivityRepository()
     config_accessor = ConfigAccessor()
     with app.app_context():
         # Seed a fresh database from a legacy config.json before filling in any
@@ -333,6 +333,8 @@ def create_app(
     def unique_id():
         return f"id-{uuid.uuid4()}"
 
+    app.add_template_global(explorer_zoom_level_label)
+
     @app.template_filter()
     def td(v: datetime.timedelta):
         if pd.isna(v) or v is None:
@@ -361,13 +363,12 @@ def create_app(
         return Markup(markdown.markdown(escaped, extensions=["nl2br"]))
 
     # Register routes and blueprints
-    register_entry_views(app, repository, config_accessor)
+    register_entry_views(app, config_accessor)
 
     blueprints = [
         (
             "/activity",
             make_activity_blueprint(
-                repository,
                 authenticator,
                 config_accessor,
                 heart_rate_zone_computer,
@@ -377,14 +378,12 @@ def create_app(
             "/authentication",
             make_authentication_blueprint(authenticator, config_accessor, flasher),
         ),
-        ("/bubble-chart", make_bubble_chart_blueprint(repository)),
-        ("/calendar", make_calendar_blueprint(repository, config_accessor)),
-        ("/eddington", register_eddington_blueprint(repository, authenticator)),
+        ("/bubble-chart", make_bubble_chart_blueprint()),
+        ("/calendar", make_calendar_blueprint(config_accessor)),
+        ("/eddington", register_eddington_blueprint(authenticator)),
         (
             "/equipment",
-            make_equipment_blueprint(
-                repository, config_accessor, authenticator, flasher
-            ),
+            make_equipment_blueprint(config_accessor, authenticator, flasher),
         ),
         (
             "/explorer",
@@ -399,11 +398,11 @@ def create_app(
         ("/export", make_export_blueprint(authenticator)),
         (
             "/hall-of-fame",
-            make_hall_of_fame_blueprint(repository, authenticator, config_accessor),
+            make_hall_of_fame_blueprint(authenticator, config_accessor),
         ),
         (
             "/heatmap",
-            make_heatmap_blueprint(repository, config_accessor, authenticator),
+            make_heatmap_blueprint(config_accessor, authenticator),
         ),
         (
             "/maintenance",
@@ -413,13 +412,11 @@ def create_app(
         ("/picture", make_pictures_blueprint()),
         (
             "/plot-builder",
-            make_plot_builder_blueprint(repository, flasher, authenticator),
+            make_plot_builder_blueprint(flasher, authenticator),
         ),
         (
             "/settings",
-            make_settings_blueprint(
-                config_accessor, authenticator, flasher, repository
-            ),
+            make_settings_blueprint(config_accessor, authenticator, flasher),
         ),
         (
             "/segments",
@@ -427,7 +424,7 @@ def create_app(
         ),
         (
             "/sharepic",
-            make_sharepic_blueprint(repository, config_accessor),
+            make_sharepic_blueprint(config_accessor),
         ),
         (
             "/shutdown",
@@ -439,12 +436,12 @@ def create_app(
         ("/search", make_search_blueprint(authenticator, config_accessor)),
         (
             "/summary",
-            make_summary_blueprint(repository, config_accessor, authenticator),
+            make_summary_blueprint(config_accessor, authenticator),
         ),
         ("/tile", make_tile_blueprint(image_transforms, tile_getter)),
         (
             "/upload",
-            make_upload_blueprint(repository, config_accessor, authenticator, flasher),
+            make_upload_blueprint(config_accessor, authenticator, flasher),
         ),
     ]
 
@@ -456,7 +453,7 @@ def create_app(
     def inject_global_variables() -> dict:
         variables = {
             "version": _try_get_version(),
-            "num_activities": len(repository),
+            "num_activities": count_activities(),
             "map_tile_attribution": config_accessor.map().map_tile_attribution,
             "currency": config_accessor.ui().currency,
             "request_url": urllib.parse.quote_plus(request.url),
@@ -481,8 +478,6 @@ def create_app(
             f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
         )
         return variables
-
-    app.activity_repository = repository
 
     return app
 
@@ -542,10 +537,8 @@ def web_ui_main(
                 DB.session.commit()
 
     if not skip_reload:
-        repository = app.activity_repository
         with app.app_context():
             scan_for_activities(
-                repository,
                 config_accessor,
                 strava_begin=strava_begin,
                 strava_end=strava_end,

@@ -1,4 +1,3 @@
-import datetime
 import logging
 from collections.abc import Callable, Sequence
 from typing import Any
@@ -7,75 +6,12 @@ import geojson
 import matplotlib
 import numpy as np
 import pandas as pd
-import sqlalchemy
-
-from geo_activity_playground.core.datamodel import (
-    DB,
-    Activity,
-    Kind,
-    query_activity_meta,
-)
 
 logger = logging.getLogger(__name__)
 
 
 MARKER_PROGRESS_STOPS: tuple[float, ...] = (0.0, 0.25, 0.5, 0.75, 1.0)
 EIGHTH_MARKER_PROGRESS_STOPS: tuple[float, ...] = (0.125, 0.375, 0.625, 0.875)
-
-
-class ActivityRepository:
-    def __len__(self) -> int:
-        return DB.session.scalars(
-            sqlalchemy.select(sqlalchemy.func.count()).select_from(Activity)
-        ).one()
-
-    def has_activity(self, activity_id: int) -> bool:
-        return bool(
-            DB.session.scalars(
-                sqlalchemy.query(Activity).where(Activity.id == activity_id)
-            ).all()
-        )
-
-    def last_activity_date(self) -> datetime.datetime | None:
-        result = DB.session.scalars(
-            sqlalchemy.select(Activity).order_by(Activity.start)
-        ).all()
-        if result:
-            return result[-1].start_local_tz
-        else:
-            return None
-
-    def get_activity_ids(self, only_achievements: bool = False) -> Sequence[int]:
-        query = sqlalchemy.select(Activity.id)
-        if only_achievements:
-            query = query.where(Kind.consider_for_achievements)
-        result = DB.session.scalars(query.order_by(Activity.start, Activity.id)).all()
-        return result
-
-    def iter_activities(self, new_to_old=True, drop_na=False) -> Sequence[Activity]:
-        query = sqlalchemy.select(Activity)
-        if drop_na:
-            query = query.where(Activity.start.is_not(None))
-        result = DB.session.scalars(query.order_by(Activity.start)).all()
-        direction = -1 if new_to_old else 1
-        return result[::direction]
-
-    def get_activity_by_id(self, id: int) -> Activity:
-        activity = DB.session.scalar(
-            sqlalchemy.select(Activity).where(Activity.id == int(id))
-        )
-        if activity is None:
-            raise ValueError(f"Cannot find activity {id} in DB.session.")
-        return activity
-
-    def get_time_series(self, id: int) -> pd.DataFrame:
-        return self.get_activity_by_id(id).time_series
-
-    @property
-    def meta(self) -> pd.DataFrame:
-        df = query_activity_meta()
-
-        return df
 
 
 def make_geojson_progress_markers_from_time_series(

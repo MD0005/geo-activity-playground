@@ -7,7 +7,6 @@ import jinja2
 import pytest
 from flask import Flask
 
-from geo_activity_playground.core.activities import ActivityRepository
 from geo_activity_playground.core.config import ConfigAccessor
 from geo_activity_playground.core.scan import scan_for_activities
 from geo_activity_playground.webui.app import create_app
@@ -16,6 +15,20 @@ METADATA_EXTRACTION_REGEXES = [
     r"(?P<kind>[^/]+)/(?P<equipment>[^/]+)/[-\d_ .]+(?P<name>[^/\.]+)(?:\.\w+)+$",
     r"(?P<kind>[^/]+)/[-\d_ .]+(?P<name>[^/\.]+)(?:\.\w+)+$",
 ]
+
+
+@pytest.fixture(autouse=True)
+def _clear_process_caches():
+    """Drop caches that live in module state, so tests do not see each other.
+
+    Each test gets a fresh in-memory database whose ids restart from one, which
+    makes cache keys from different tests collide.
+    """
+    from geo_activity_playground.features.explorer import filtered
+
+    filtered._process_cache.clear()
+    yield
+    filtered._process_cache.clear()
 
 
 @pytest.fixture
@@ -83,7 +96,6 @@ def seeded_app(app: Flask, testdata_dir: pathlib.Path):
         )
         config_accessor.save()
         scan_for_activities(
-            ActivityRepository(),
             config_accessor,
             skip_strava=True,
             skip_hammerhead=True,

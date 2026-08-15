@@ -20,7 +20,7 @@ Inside of your [base directory](create-a-base-directory.md), create a directory 
 
 The program will treat the files as read-only and does not modify them.
 
-You can manually rename, move or delete your activity files, but the program needs to reload to respect these changes. You can restart the program or visit “Scan New Activities” in the admin menu of the web interface.
+You can manually rename, move or delete your activity files, but the program needs to reload to respect these changes. You can restart the program or visit “Scan New Activities” in the “Data” menu of the web interface.
 
 ## Metadata extraction
 
@@ -31,7 +31,7 @@ So for `Activities/2024-03-03-17-42-10 Home to Bakery.gpx` the `name` is `2024-0
 
 ## Upload files through the web interface
 
-Instead of copying files yourself, you can upload them under “Upload Activity” in the admin menu. You can select several files at once.
+Instead of copying files yourself, you can upload them under “Upload Activities” in the “Data” menu. You can select several files at once.
 
 If a file with the same name is already there, the upload is stored under the SHA-256 checksum of its content instead. If the content is identical to a file that is already there, the upload is skipped, because it would be a duplicate anyway.
 

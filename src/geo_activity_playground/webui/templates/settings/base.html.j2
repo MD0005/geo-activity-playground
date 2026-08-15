@@ -1,4 +1,5 @@
 {% extends "page.html.j2" %}
+{% from "nav-macros.html.j2" import nav_active with context %}
 
 {# Navigation structure for settings pages #}
 {% set settings_nav = [
@@ -9,13 +10,14 @@
             {"endpoint": "settings.hammerhead", "label": _("Hammerhead API"), "icon": "🚴"},
             {"endpoint": "settings.metadata_extraction", "label": _("Metadata Extraction"), "icon": "📝"},
             {"endpoint": "settings.excluded_activities", "label": _("Excluded Activities"), "icon": "🚫"},
+            {"endpoint": "settings.duplicate_matching", "label": _("Duplicate Matching"), "icon": "🧬"},
+            {"endpoint": "settings.possible_duplicates", "label": _("Possible Duplicates"), "icon": "👥"},
         ]
     },
     {
         "group": _("Display"),
         "entries": [
             {"endpoint": "settings.color_schemes", "label": _("Color Schemes"), "icon": "🎨"},
-            {"endpoint": "settings.color_strategy", "label": _("Color Strategy"), "icon": "🗺️"},
             {"endpoint": "settings.tile_source", "label": _("Map Tile Source"), "icon": "🧭"},
             {"endpoint": "settings.language", "label": _("Language"), "icon": "🌐"},
             {"endpoint": "settings.currency", "label": _("Currency"), "icon": "💶"},
@@ -24,10 +26,20 @@
         ]
     },
     {
+        "group": _("Explorer Tiles"),
+        "entries": [
+            {"endpoint": "settings.explorer_zoom_levels", "label": _("Explorer Levels"), "icon": "🔍"},
+            {"endpoint": "settings.explorer_counted_activities", "label": _("Counted Activities"), "icon": "🎯"},
+            {"endpoint": "settings.explorer_tiles", "label": _("Inaccessible Tiles"), "icon": "🧩"},
+            {"endpoint": "settings.tile_rendering", "label": _("Tile Coloring"), "icon": "🗺️"},
+        ]
+    },
+    {
         "group": _("Analysis"),
         "entries": [
             {"endpoint": "settings.segmentation", "label": _("Track Segmentation"), "icon": "✂️"},
-            {"endpoint": "plot_builder.index", "label": _("Plot Builder"), "icon": "📊"},
+            {"endpoint": "plot_builder.index", "label": _("Plot Builder"), "icon": "📊",
+             "match": ["plot_builder."]},
         ]
     },
     {
@@ -39,8 +51,10 @@
     {
         "group": _("Management"),
         "entries": [
-            {"endpoint": "settings.manage_kinds", "label": _("Activity Kinds"), "icon": "🏃"},
-            {"endpoint": "settings.tags_list", "label": _("Tags"), "icon": "🏷️"},
+            {"endpoint": "settings.manage_kinds", "label": _("Activity Kinds"), "icon": "🏃",
+             "match": ["settings.kinds_new", "settings.kinds_edit", "settings.kinds_delete"]},
+            {"endpoint": "settings.tags_list", "label": _("Tags"), "icon": "🏷️",
+             "match": ["settings.tags_new", "settings.tags_edit"]},
         ]
     },
     {
@@ -59,20 +73,6 @@
         ]
     },
 ] %}
-
-{# Helper macro to check if current page is within a nav item's scope #}
-{% macro is_active(endpoint) %}
-    {%- set current = request.endpoint -%}
-    {%- if current == endpoint -%}
-        active
-    {%- elif endpoint == 'settings.tags_list' and current in ['settings.tags_list', 'settings.tags_new', 'settings.tags_edit'] -%}
-        active
-    {%- elif endpoint == 'settings.manage_kinds' and current in ['settings.manage_kinds', 'settings.kinds_new', 'settings.kinds_edit', 'settings.kinds_delete'] -%}
-        active
-    {%- elif endpoint == 'plot_builder.index' and current and current.startswith('plot_builder.') -%}
-        active
-    {%- endif -%}
-{% endmacro %}
 
 {% block container %}
 <div class="row">
@@ -105,9 +105,9 @@
             <ul class="nav nav-pills flex-column mb-2">
                 {% for item in group.entries %}
                 <li class="nav-item">
-                    <a class="nav-link py-1 px-2 {{ is_active(item.endpoint) }}" 
+                    <a class="nav-link py-1 px-2 {{ nav_active(item) | trim }}"
                        href="{{ url_for(item.endpoint) }}"
-                       {% if is_active(item.endpoint) %}aria-current="page"{% endif %}>
+                       {% if nav_active(item) | trim %}aria-current="page"{% endif %}>
                         <span class="me-2">{{ item.icon }}</span>{{ item.label }}
                     </a>
                 </li>

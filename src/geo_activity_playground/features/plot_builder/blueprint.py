@@ -4,8 +4,7 @@ import sqlalchemy
 from flask import Blueprint, redirect, render_template, request, url_for
 from flask.typing import ResponseReturnValue
 
-from ...core.activities import ActivityRepository
-from ...core.datamodel import DB
+from ...core.datamodel import DB, query_activity_meta
 from ...webui.authenticator import Authenticator, needs_authentication
 from ...webui.flasher import Flasher, FlashTypes
 from .analysis import (
@@ -19,7 +18,7 @@ from .model import PlotSpec
 
 
 def make_plot_builder_blueprint(
-    repository: ActivityRepository, flasher: Flasher, authenticator: Authenticator
+    flasher: Flasher, authenticator: Authenticator
 ) -> Blueprint:
     blueprint = Blueprint("plot_builder", __name__, template_folder="templates")
 
@@ -75,7 +74,7 @@ def make_plot_builder_blueprint(
             spec.opacity = request.form["opacity"]
             spec.group_by = request.form["group_by"]
         try:
-            plot = make_parametric_plot(repository.meta, spec)
+            plot = make_parametric_plot(query_activity_meta(), spec)
             DB.session.commit()
         except ValueError as e:
             plot = None
@@ -90,7 +89,7 @@ def make_plot_builder_blueprint(
             spec=spec,
         )
 
-    @blueprint.route("/delete/<int:id>")
+    @blueprint.route("/delete/<int:id>", methods=["POST"])
     @needs_authentication(authenticator)
     def delete(id: int) -> ResponseReturnValue:
         spec = DB.session.get(PlotSpec, id)

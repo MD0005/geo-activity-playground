@@ -88,3 +88,8 @@ For my home city it looks like this:
 ![](images/squadratinhos-bonn.png)
 
 You can see how the squadratinhos are much smaller than the explorer tiles and how they lend themselves to more local exploring.
+## Choosing zoom levels
+
+By default the program computes explorer tiles at zoom 14 and squadratinhos at zoom 17. Under _Settings → Explorer Zoom Levels_ you can enable further levels, for instance zoom 15 and 16 as intermediate targets, or zoom 12 for a country-scale view.
+
+Each enabled level gets its own page in the Explorer menu, its own map overlays and its own square planner. Every additional level costs computation time during import and storage in the database, so only enable the ones you actually look at. Disabling a level discards its cluster and square history; the recorded tile visits remain, so the level can be enabled again later and will be recomputed from the full history.

@@ -7,25 +7,22 @@ import traceback
 import sqlalchemy
 from tqdm import tqdm
 
-from ...core.activities import ActivityRepository
 from ...core.datamodel import (
     DB,
     DEFAULT_UNKNOWN_NAME,
     Activity,
     ActivityImportConfig,
-    UiConfig,
     get_or_make_equipment,
     get_or_make_kind,
 )
+from ...core.duplicate_matching import check_for_duplicate
 from ...core.enrichment import update_and_commit
 from ...core.import_exclusion import clear_exclusion, is_excluded, record_exclusion
-from ...core.tile_visits import compute_tile_visits_new
 from ...importers.activity_parsers import (
     ActivityParseError,
     NoGeoDataError,
     read_activity,
 )
-from ..explorer.clustering import compute_tile_evolution
 
 logger = logging.getLogger(__name__)
 
@@ -33,9 +30,7 @@ ACTIVITY_DIR = pathlib.Path("Activities")
 
 
 def import_from_directory(
-    repository: ActivityRepository,
     config: ActivityImportConfig,
-    ui_config: UiConfig,
     source: str | None = None,
 ) -> None:
     activity_paths = [
@@ -70,8 +65,8 @@ def import_from_directory(
             activity.upstream_id = file_sha256(pathlib.Path(activity.path))
     DB.session.commit()
 
-    for i, activity_path in enumerate(
-        tqdm(paths_to_import, desc="Importing activity files", delay=0)
+    for activity_path in tqdm(
+        paths_to_import, desc="Importing activity files", delay=0
     ):
         with DB.session.no_autoflush:
             activity = DB.session.scalar(
@@ -99,10 +94,7 @@ def import_from_directory(
 
             import_from_file(
                 activity_path,
-                repository,
                 config,
-                ui_config,
-                i,
                 current_hash,
                 source,
             )
@@ -110,10 +102,7 @@ def import_from_directory(
 
 def import_from_file(
     path: pathlib.Path,
-    repository: ActivityRepository,
     config: ActivityImportConfig,
-    ui_config: UiConfig,
-    i: int,
     file_hash: str,
     source: str | None = None,
 ) -> None:
@@ -170,10 +159,7 @@ def import_from_file(
     activity.source = source
 
     update_and_commit(activity, time_series, config)
-
-    if len(repository) > 0 and i % 50 == 0:
-        compute_tile_visits_new(repository)
-        compute_tile_evolution(ui_config)
+    check_for_duplicate(activity, config)
 
 
 def get_metadata_from_path(

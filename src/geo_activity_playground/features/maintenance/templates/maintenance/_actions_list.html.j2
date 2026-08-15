@@ -33,8 +33,10 @@
             {% if is_authenticated %}
             <div class="text-nowrap">
                 <a class="btn btn-sm btn-secondary" href="{{ url_for('maintenance.edit_action', id=action.id) }}">{{ _('Edit') }}</a>
-                <a class="btn btn-sm btn-danger" href="{{ url_for('maintenance.delete_action', id=action.id) }}"
-                    onclick="if(!confirm('{{ _('Delete this maintenance action?') }}')){ event.preventDefault() }">{{ _('Delete') }}</a>
+                <form method="post" action="{{ url_for('maintenance.delete_action', id=action.id) }}" class="d-inline">
+                    <button type="submit" class="btn btn-sm btn-danger"
+                        onclick="if(!confirm('{{ _('Delete this maintenance action?') }}')){ event.preventDefault() }">{{ _('Delete') }}</button>
+                </form>
             </div>
             {% endif %}
         </div>

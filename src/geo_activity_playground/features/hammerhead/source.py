@@ -1,6 +1,5 @@
 import sqlalchemy
 
-from ...core.activities import ActivityRepository
 from ...core.config import ConfigAccessor
 from ...core.datamodel import DB
 from ...core.sources import ActivitySource
@@ -20,13 +19,11 @@ class HammerheadActivitySource(ActivitySource):
     def import_activities(
         self,
         config_accessor: ConfigAccessor,
-        repository: ActivityRepository,
         begin: str | None = None,
         end: str | None = None,
     ) -> None:
         import_from_hammerhead_api(
             config_accessor.activity_import(),
-            repository,
             begin,
             end,
             source=self.source,

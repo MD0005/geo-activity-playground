@@ -1,0 +1,28 @@
+{% extends "settings/base.html.j2" %}
+
+{% block breadcrumbs %}
+<li class="breadcrumb-item active" aria-current="page">{{ _('Inaccessible Tiles') }}</li>
+{% endblock %}
+
+{% block settings_content %}
+<h1 class="mb-3">{{ _('Inaccessible Tiles') }}</h1>
+
+<p>{{ _('Tiles that you have marked as inaccessible cannot be reached, so they will stay missing forever and can block a cluster or a square from growing. You can let them count as covered for the purpose of cluster and square geometry.') }}</p>
+
+<p>{{ _('They never count as visited tiles: your explored tile counts stay honest, and the map keeps drawing them in the inaccessible style. Counting is off by default, which is the stricter game.') }}</p>
+
+<p>{{ _('Inaccessible tiles are counted from the origin of time, as if they had always been covered. Enabling this therefore also changes the past in the cluster and square evolution plots.') }}</p>
+
+<form method="POST">
+    <div class="form-check form-switch">
+        <input class="form-check-input" type="checkbox" role="switch" id="count_inaccessible_in_cluster"
+            name="count_inaccessible_in_cluster" {{ 'checked' if count_inaccessible_in_cluster else '' }} />
+        <label class="form-check-label" for="count_inaccessible_in_cluster">
+            {{ _('Count inaccessible tiles toward cluster and square') }}
+        </label>
+    </div>
+    <button type="submit" class="btn btn-primary mt-3">{{ _('Save') }}</button>
+</form>
+
+<p class="mt-3 text-body-secondary">{{ _('Tiles are marked as inaccessible per zoom level, so marking a tile on the zoom 14 map does not mark the corresponding zoom 17 tiles.') }}</p>
+{% endblock %}

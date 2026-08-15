@@ -1,0 +1,65 @@
+{% extends "settings/base.html.j2" %}
+
+{% block breadcrumbs %}
+<li class="breadcrumb-item active" aria-current="page">{{ _('Possible Duplicates') }}</li>
+{% endblock %}
+
+{% block settings_content %}
+<h1 class="mb-3">{{ _('Possible Duplicates') }}</h1>
+
+<p>{{ _('These pairs of activities from different sources have a similar start time, distance, and duration, so they are likely the same ride imported twice. Pick which one to keep; its tags, equipment, kind, and photos are carried over from the other one if it does not already have them, and the other activity is removed (its source file is untouched but excluded from future re-import). See Settings → Duplicate Matching to tune detection or turn on automatic resolution.') }}</p>
+
+{% if rows %}
+<div class="table-responsive">
+    <table class="table table-striped align-middle">
+        <thead>
+            <tr>
+                <th>{{ _('Activity A') }}</th>
+                <th>{{ _('Activity B') }}</th>
+                <th>{{ _('Detected') }}</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for row in rows %}
+            {% set candidate = row.candidate %}
+            <tr>
+                <td>
+                    <a href="{{ url_for('activity.show', id=candidate.activity_a.id) }}">{{ candidate.activity_a.name }}</a>
+                    <div class="text-body-secondary small">
+                        {{ candidate.activity_a.source }} · {{ candidate.activity_a.start }}
+                        {% if candidate.activity_a.distance_km %} · {{ '%.1f'|format(candidate.activity_a.distance_km) }} km{% endif %}
+                        {% if row.suggested_keep == 'a' %}<span class="badge text-bg-secondary ms-1">{{ _('suggested') }}</span>{% endif %}
+                    </div>
+                </td>
+                <td>
+                    <a href="{{ url_for('activity.show', id=candidate.activity_b.id) }}">{{ candidate.activity_b.name }}</a>
+                    <div class="text-body-secondary small">
+                        {{ candidate.activity_b.source }} · {{ candidate.activity_b.start }}
+                        {% if candidate.activity_b.distance_km %} · {{ '%.1f'|format(candidate.activity_b.distance_km) }} km{% endif %}
+                        {% if row.suggested_keep == 'b' %}<span class="badge text-bg-secondary ms-1">{{ _('suggested') }}</span>{% endif %}
+                    </div>
+                </td>
+                <td>{{ candidate.detected_at }}</td>
+                <td class="text-nowrap">
+                    <form method="POST" action="{{ url_for('.possible_duplicates_resolve', id=candidate.id) }}" class="d-inline">
+                        <input type="hidden" name="keep" value="a" />
+                        <button type="submit" class="btn btn-sm btn-outline-primary">{{ _('Keep A') }}</button>
+                    </form>
+                    <form method="POST" action="{{ url_for('.possible_duplicates_resolve', id=candidate.id) }}" class="d-inline">
+                        <input type="hidden" name="keep" value="b" />
+                        <button type="submit" class="btn btn-sm btn-outline-primary">{{ _('Keep B') }}</button>
+                    </form>
+                    <form method="POST" action="{{ url_for('.possible_duplicates_dismiss', id=candidate.id) }}" class="d-inline" onsubmit="return confirm('{{ _('Are you sure these are not duplicates?') }}');">
+                        <button type="submit" class="btn btn-sm btn-outline-secondary">{{ _('Not a duplicate') }}</button>
+                    </form>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% else %}
+<p class="text-muted">{{ _('No possible duplicates detected.') }}</p>
+{% endif %}
+{% endblock %}

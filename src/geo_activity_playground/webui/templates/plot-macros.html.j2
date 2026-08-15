@@ -1,7 +1,7 @@
 {% macro vega(path) %}
 {% set id = unique_id() %}
 <div id="{{ id }}"></div>
-<script type="text/javascript">
+<script type="module">
     vegaEmbed('#{{ id }}', "{{ path }}").then(function (result) { }).catch(console.error);
 </script>
 {% endmacro %}
@@ -9,8 +9,31 @@
 {% macro vega_direct(spec) %}
 {% set id = unique_id() %}
 <div id="{{ id }}"></div>
-<script type="text/javascript">
+<script type="module">
     vegaEmbed('#{{ id }}', {{ spec| safe }}).then(function (result) { }).catch(console.error);
+</script>
+{% endmacro %}
+
+{# A Vega chart whose spec is fetched from `url` after the page has rendered.
+   Use for charts that are expensive to compute, so the page is not held up by
+   them. The URL must return `{"spec": <vega spec>}` or `{"spec": null}`. #}
+{% macro fetched_vega(url, placeholder="") %}
+{% set id = unique_id() %}
+<div id="{{ id }}" class="text-body-secondary">{{ placeholder or _("Loading …") }}</div>
+<script type="module">
+    fetch("{{ url }}")
+        .then(response => response.json())
+        .then(payload => {
+            const target = document.getElementById("{{ id }}");
+            if (!payload.spec) {
+                target.remove();
+                return;
+            }
+            target.textContent = "";
+            target.classList.remove("text-body-secondary");
+            vegaEmbed("#{{ id }}", payload.spec);
+        })
+        .catch(console.error);
 </script>
 {% endmacro %}
 
@@ -18,7 +41,7 @@
    `geojson` may be null to get a bare map without a layer. Options: weight, opacity, padding. #}
 {% macro map_script() %}
 <script type="module">
-    import { add_layers_to_map } from '/static/map-layers.js';
+    import { add_layers_to_map } from '/static/dist/map-layers.js';
 
     window.add_map = function (element_id, geojson, options = {}) {
         let map = L.map(element_id, {
@@ -29,7 +52,8 @@
             zoomLevels: {{ explorer_zoom_levels | tojson }},
             attribution: '{{ map_tile_attribution|safe }}',
             baseLayer: 'Color',
-            overlay: null
+            overlay: null,
+            searchQuery: '{{ base_query_str if base_query_str is defined else "" }}' || null
         })
 
         if (!geojson) {

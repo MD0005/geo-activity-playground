@@ -29,6 +29,13 @@ http://localhost:5000/explorer/17/tile/{z}/{x}/{y}.png?color_strategy=visits
 http://localhost:5000/explorer/17/tile/{z}/{x}/{y}.png?color_strategy=missing
 ```
 
+The track of the most recent activity that discovered a tile at a given zoom level is available as a red line in its own layer. Append `?activity_id=…` to draw a specific activity instead:
+
+```
+http://localhost:5000/explorer/14/latest-new-tiles-activity/{z}/{x}/{y}.png
+http://localhost:5000/explorer/17/latest-new-tiles-activity/{z}/{x}/{y}.png
+```
+
 And for the heatmap, you can use these:
 
 ```

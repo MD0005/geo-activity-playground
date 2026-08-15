@@ -1,8 +1,9 @@
 <!DOCTYPE html>
 <html lang="en">
 
-{% from "plot-macros.html.j2" import vega, vega_direct, activity_tag, tabbed_vega %}
+{% from "plot-macros.html.j2" import vega, vega_direct, fetched_vega, activity_tag, tabbed_vega %}
 {% from "plot-macros.html.j2" import map_script, fetched_map with context %}
+{% from "nav-macros.html.j2" import nav_active, nav_group_active with context %}
 
 <head>
     <meta charset="utf-8">
@@ -10,13 +11,6 @@
 
     <title>{{ _('Geo Activity Playground') }}</title>
 
-    <!-- Bootstrap CSS. -->
-    <link href="/static/bootstrap/bootstrap.min.css" rel="stylesheet">
-
-    <!-- Leaflet for interactive maps. -->
-    <link rel="stylesheet" href="/static/leaflet/leaflet.css" />
-    <script src="/static/leaflet/leaflet.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/leaflet-relief@1.5.0/dist/leaflet-relief.min.js"></script>
     <script>
         window.gapHillshade = {
             opacity: {{ hillshade_opacity | tojson }},
@@ -24,26 +18,8 @@
         };
     </script>
 
-    <!-- Fullscreen button for Leaflet. -->
-    <link href='/static/leaflet/leaflet.fullscreen.css' rel='stylesheet' />
-    <script src='/static/leaflet/Leaflet.fullscreen.min.js'></script>
-
-    <link rel="stylesheet" href="/static/leaflet/MarkerCluster.css" />
-    <link rel="stylesheet" href="/static/leaflet/MarkerCluster.Default.css" />
-    <link rel="stylesheet" href="/static/site.css" />
-    <script src="/static/leaflet/leaflet.markercluster.js"></script>
-
-    <script src="/static/leaflet/leaflet-simplestyle.min.js"></script>
-    <script src="/static/progress-markers.js"></script>
-
-    <!-- Vega for plots.-->
-    <script src="/static/vega/vega@6.js"></script>
-    <script src="/static/vega/vega-lite@6.js"></script>
-    <script src="/static/vega/vega-embed@7.js"></script>
-
-    <script src="/static/bootstrap/bootstrap-dark-mode.js"></script>
-
-    <script src="/static/table-sort.min.js"></script>
+    <link rel="stylesheet" href="/static/dist/app.css">
+    <script type="module" src="/static/dist/app.js"></script>
 
     <!-- Favicon. -->
     <link rel="apple-touch-icon" sizes="180x180" href="/static/favicons/apple-touch-icon.png">
@@ -57,6 +33,95 @@
 </head>
 
 <body>
+    {# Navigation structure for the main menu. A group with `entries` renders as a
+       dropdown, a group with an `endpoint` as a plain link. #}
+    {% set explorer = namespace(tiles=[], squares=[]) %}
+    {% for zoom in explorer_zoom_levels %}
+    {% set explorer.tiles = explorer.tiles + [{
+        "endpoint": "explorer.server_side",
+        "args": {"zoom": zoom},
+        "label": explorer_zoom_level_label(zoom),
+    }] %}
+    {% set explorer.squares = explorer.squares + [{
+        "endpoint": "square_planner.landing",
+        "args": {"zoom": zoom},
+        "match": ["square_planner.index"],
+        "label": _('Square Planner (Zoom %(zoom)d)', zoom=zoom),
+    }] %}
+    {% endfor %}
+
+    {% set main_nav = [
+        {
+            "label": _('Activities'),
+            "needs_activities": true,
+            "entries": [
+                {"endpoint": "search.index", "label": _('Overview & Search')},
+                {"endpoint": "search.map_view", "label": _('Search as Map')},
+                {"endpoint": "calendar.index", "label": _('Calendar'),
+                 "match": ["calendar.month", "calendar.day"]},
+                {"endpoint": "bubble_chart.index", "label": _('Bubble Chart')},
+                {"endpoint": "segments.index", "label": _('Segments'), "match": ["segments."]},
+            ]
+        },
+        {
+            "label": _('Explorer'),
+            "needs_activities": true,
+            "entries": explorer.tiles + [{"divider": true}] + explorer.squares + [
+                {"divider": true},
+                {"endpoint": "explorer_video.video", "label": _('Video Export')},
+            ]
+        },
+        {
+            "label": _('Maps'),
+            "entries": [
+                {"endpoint": "heatmap.index", "label": _('Heatmap'), "needs_activities": true},
+                {"endpoint": "photo.map", "label": _('Photo Map'), "needs_photos": true},
+            ]
+        },
+        {
+            "label": _('Statistics'),
+            "needs_activities": true,
+            "entries": [
+                {"endpoint": "summary.index", "label": _('Summary Statistics')},
+                {"endpoint": "calendar.wrap_latest", "label": _('Year & Month Wrap'),
+                 "match": ["calendar.wrap_year", "calendar.wrap_month"]},
+                {"endpoint": "hall_of_fame.index", "label": _('Hall of Fame')},
+                {"endpoint": "eddington.distance", "label": _('Eddington Number')},
+                {"endpoint": "eddington.elevation_gain", "label": _('Elevation Eddington Number')},
+            ]
+        },
+        {
+            "label": _('Gear'),
+            "needs_activities": true,
+            "entries": [
+                {"endpoint": "equipment.index", "label": _('Equipment'), "match": ["equipment."]},
+                {"endpoint": "maintenance.index", "label": _('Maintenance'), "match": ["maintenance."]},
+            ]
+        },
+        {
+            "label": _('Data'),
+            "entries": [
+                {"endpoint": "upload.index", "label": _('Upload Activities')},
+                {"endpoint": "photo.new", "label": _('Upload Photos')},
+                {"endpoint": "upload.reload", "label": _('Scan New Activities')},
+                {"divider": true},
+                {"endpoint": "export.index", "label": _('Data Export')},
+            ]
+        },
+        {
+            "label": _('Settings'),
+            "endpoint": "settings.index",
+            "match": ["settings.", "authentication.change_password", "plot_builder."],
+        },
+    ] %}
+
+    {# Yields "visible" unless the entry depends on data that does not exist yet. #}
+    {% macro nav_visible(item) %}
+        {%- if item.get('needs_activities') and not num_activities -%}
+        {%- elif item.get('needs_photos') and not photo_count -%}
+        {%- else -%}visible{%- endif -%}
+    {% endmacro %}
+
     <div class="container">
         <nav class="navbar navbar-expand-lg bg-body-secondary mb-3">
             <div class="container-fluid">
@@ -68,135 +133,58 @@
                 </button>
                 <div class="collapse navbar-collapse" id="navbarSupportedContent">
                     <ul class="navbar-nav me-auto mb-2 mb-lg-0">
+                        {% for group in main_nav %}
+                        {% if nav_visible(group) | trim %}
 
-                        {% if num_activities > 0 %}
+                        {# A group is only worth a dropdown once more than one of its
+                           entries is actually available. #}
+                        {% set shown = namespace(entries=[], links=[]) %}
+                        {% for item in group.get('entries') or [] %}
+                        {% if nav_visible(item) | trim %}
+                        {% set shown.entries = shown.entries + [item] %}
+                        {% if not item.get('divider') %}
+                        {% set shown.links = shown.links + [item] %}
+                        {% endif %}
+                        {% endif %}
+                        {% endfor %}
+
+                        {% if shown.links | length > 1 %}
                         <li class="nav-item dropdown">
-                            <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown"
-                                aria-expanded="false">
-                                {{ _('Activities') }}
+                            <a class="nav-link dropdown-toggle {{ nav_group_active(group) | trim }}" href="#"
+                                role="button" data-bs-toggle="dropdown" aria-expanded="false">
+                                {{ group.label }}
                             </a>
                             <ul class="dropdown-menu">
-                                <li><a class="dropdown-item" href="{{ url_for('calendar.index') }}">{{ _('Calendar')
-                                        }}</a></li>
-                                <li><a class="dropdown-item" href="{{ url_for('search.index') }}">{{ _('Overview &
-                                        Search') }}</a>
-                                </li>
-                                <li><a class="dropdown-item" href="{{ url_for('search.map_view') }}">{{ _('Search as
-                                        Map') }}</a>
-                                </li>
-                                <li><a class="dropdown-item" href="{{ url_for('bubble_chart.index') }}">{{ _('Bubble
-                                        Chart') }}</a>
-                                </li>
-                            </ul>
-                        </li>
-
-                        <li class="nav-item dropdown">
-                            <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown"
-                                aria-expanded="false">
-                                {{ _('Statistics') }}
-                            </a>
-                            <ul class="dropdown-menu">
-                                <li><a class="dropdown-item" href="{{ url_for('summary.index') }}">{{ _('Summary
-                                        Statistics') }}</a>
-                                </li>
-                                <li><a class="dropdown-item" href="{{ url_for('calendar.wrap_latest') }}">{{ _('Year & Month Wrap') }}</a>
-                                </li>
-                                <li><a class="dropdown-item" href="{{ url_for('hall_of_fame.index') }}">{{ _('Hall of
-                                        Fame') }}</a>
-                                </li>
-                                <li><a class="dropdown-item" href="{{ url_for('eddington.distance') }}">{{ _('Eddington
-                                        Number') }}</a>
-                                </li>
-                                <li><a class="dropdown-item" href="{{ url_for('eddington.elevation_gain') }}">{{
-                                        _('Elevation Eddington Number') }}</a>
-                                </li>
-                                <li><a class="dropdown-item" href="{{ url_for('equipment.index') }}">{{ _('Equipment')
-                                        }}</a></li>
-                                <li><a class="dropdown-item" href="{{ url_for('maintenance.index') }}">{{
-                                        _('Maintenance') }}</a></li>
-                                <li><a class="dropdown-item" href="{{ url_for('segments.index') }}">{{ _('Segments')
-                                        }}</a></li>
-                            </ul>
-                        </li>
-
-                        <li class="nav-item dropdown">
-                            <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown"
-                                aria-expanded="false">
-                                {{ _('Explorer') }}
-                            </a>
-                            <ul class="dropdown-menu">
-                                <li><a class="dropdown-item" href="{{ url_for('explorer.server_side', zoom=14) }}">{{
-                                        _('Explorer Tiles (Zoom 14)') }}</a></li>
-                                <li><a class="dropdown-item" href="{{ url_for('explorer.server_side', zoom=17) }}">{{
-                                        _('Squadratinhos (Zoom 17)') }}</a></li>
-                                <li><a class="dropdown-item" href="{{ url_for('explorer_video.video') }}">{{
-                                        _('Explorer Video Export') }}</a></li>
-
+                                {% for item in shown.entries %}
+                                {% if item.get('divider') %}
                                 <li>
                                     <hr class="dropdown-divider">
                                 </li>
-
-                                <li><a class="dropdown-item" href="{{ url_for('square_planner.landing', zoom=14) }}">{{
-                                        _('Square Planner (Zoom 14)') }}</a></li>
-                                <li><a class="dropdown-item" href="{{ url_for('square_planner.landing', zoom=17) }}">{{
-                                        _('Square Planner (Zoom 17)') }}</a></li>
+                                {% else %}
+                                <li><a class="dropdown-item {{ nav_active(item) | trim }}"
+                                        href="{{ url_for(item.endpoint, **(item.get('args') or {})) }}" {% if
+                                        nav_active(item) | trim %}aria-current="page" {% endif %}>{{ item.label }}</a>
+                                </li>
+                                {% endif %}
+                                {% endfor %}
                             </ul>
                         </li>
-
+                        {% else %}
+                        {% set link = shown.links[0] if shown.links else (group if not group.get('entries') else none) %}
+                        {% if link %}
                         <li class="nav-item">
-                            <a class="nav-link" aria-current="page" href="{{ url_for('heatmap.index') }}">{{
-                                _('Heatmap') }}</a>
+                            <a class="nav-link {{ nav_active(link) | trim }}"
+                                href="{{ url_for(link.endpoint, **(link.get('args') or {})) }}" {% if nav_active(link) |
+                                trim %}aria-current="page" {% endif %}>{{ link.label }}</a>
                         </li>
                         {% endif %}
-
-                        {% if photo_count > 0 %}
-                        <li class="nav-item">
-                            <a class="nav-link" aria-current="page" href="{{ url_for('photo.map') }}">{{ _('Photo Map')
-                                }}</a>
-                        </li>
                         {% endif %}
 
-                        <li class="nav-item dropdown">
-                            <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown"
-                                aria-expanded="false">
-                                {{ _('Admin') }}
-                            </a>
-                            <ul class="dropdown-menu">
-                                <li><a class="dropdown-item" href="{{ url_for('upload.index') }}">{{ _('Upload
-                                        Activities') }}</a>
-                                </li>
-                                <li><a class="dropdown-item" href="{{ url_for('photo.new') }}">{{ _('Upload Photos')
-                                        }}</a>
-                                </li>
-                                <li><a class="dropdown-item" href="{{ url_for('upload.reload') }}">{{ _('Scan New
-                                        Activities') }}</a>
-                                </li>
+                        {% endif %}
+                        {% endfor %}
+                    </ul>
 
-                                <li>
-                                    <hr class="dropdown-divider">
-                                </li>
-
-                                <li><a class="dropdown-item" href="{{ url_for('plot_builder.index') }}">{{ _('Plot
-                                        Builder') }}</a>
-                                </li>
-                                <li><a class="dropdown-item" href="{{ url_for('settings.index') }}">{{ _('Settings')
-                                        }}</a></li>
-                                <li><a class="dropdown-item" href="{{ url_for('export.index') }}">{{ _('Data Export')
-                                        }}</a></li>
-                                <li>
-                                    <hr class="dropdown-divider">
-                                </li>
-
-                                <li>
-                                    <form action="{{ url_for('shutdown.shutdown') }}" method="POST" style="margin: 0;"
-                                        onsubmit="return confirm('{{ _('Are you sure you want to shut down the server? This will terminate the application.') }}');">
-                                        <button type="submit" class="dropdown-item text-danger">{{ _('Shutdown Server')
-                                            }}</button>
-                                    </form>
-                                </li>
-                            </ul>
-                        </li>
-
+                    <ul class="navbar-nav mb-2 mb-lg-0">
                         <li class="nav-item dropdown">
                             <button
                                 class="btn btn-link nav-link py-2 px-0 px-lg-2 dropdown-toggle d-flex align-items-center"
@@ -224,6 +212,14 @@
                                     </button>
                                 </li>
                             </ul>
+                        </li>
+
+                        <li class="nav-item">
+                            <form action="{{ url_for('shutdown.shutdown') }}" method="POST" class="m-0"
+                                onsubmit="return confirm('{{ _('Are you sure you want to shut down the server? This will terminate the application.') }}');">
+                                <button type="submit" class="btn btn-link nav-link py-2 px-0 px-lg-2 text-danger"
+                                    title="{{ _('Shutdown Server') }}" aria-label="{{ _('Shutdown Server') }}">⏻</button>
+                            </form>
                         </li>
                     </ul>
                 </div>
@@ -266,8 +262,6 @@
             </ul>
         </div>
     </div>
-
-    <script src="/static/bootstrap/bootstrap.bundle.min.js"></script>
 </body>
 
 </html>

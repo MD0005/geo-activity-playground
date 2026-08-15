@@ -1,3 +1,4 @@
+import datetime
 import decimal
 import json
 import logging
@@ -19,7 +20,6 @@ from flask import (
 from flask_babel import gettext as _
 from tqdm import tqdm
 
-from ...core.activities import ActivityRepository
 from ...core.config import ConfigAccessor
 from ...core.currency import format_money
 from ...core.datamodel import (
@@ -27,15 +27,16 @@ from ...core.datamodel import (
     Activity,
     ActivityImportConfig,
     ActivityTile,
+    DuplicateCandidate,
     Equipment,
     Kind,
     PrivacyZone,
     StoredSearchQuery,
     Tag,
     TileVisit,
-    UiConfig,
     activity_tag_association_table,
 )
+from ...core.duplicate_matching import merge_duplicate, pick_winner
 from ...core.enrichment import enrichment_set_timezone, update_and_commit
 from ...core.heart_rate import HeartRateZoneComputer
 from ...core.import_exclusion import ImportExclusion
@@ -43,15 +44,36 @@ from ...core.tag_extraction import apply_tag_extraction, get_tags_with_extractio
 from ...core.tile_visits import (
     _reset_tile_visits_db,
     compute_tile_visits_new,
+    rebuild_tile_visits_from_activity_tiles,
 )
 from ...features.activity_photos.model import Photo
 from ...features.directory_import.blueprint import register_directory_import_settings
-from ...features.explorer.clustering import compute_tile_evolution
+from ...features.explorer.clustering import (
+    compute_current_state_for_zoom,
+    compute_tile_evolution,
+    delete_tile_evolution,
+    mark_cluster_history_stale,
+    rebuild_cluster_history,
+)
+from ...features.explorer.filtered import (
+    delete_filtered_cluster_cache,
+    delete_stale_filtered_cluster_cache,
+    get_filtered_cluster_cache_stats,
+)
 from ...features.explorer.model import (
-    ClusterHistoryCheckpoint,
+    TILE_STYLE_DEFAULTS,
+    BorderStroke,
     ClusterHistoryEvent,
     ClusterMembership,
+    ClusterTileActivation,
     ExplorerTileBookmark,
+    FilteredClusterCache,
+    TileStyleName,
+    get_tile_styles,
+)
+from ...features.explorer.zoom_levels import (
+    EXPLORER_ZOOM_LEVEL_NAMES,
+    SELECTABLE_EXPLORER_ZOOM_LEVELS,
 )
 from ...features.hammerhead.blueprint import register_hammerhead_settings
 from ...features.heatmap.blueprint import register_heatmap_settings
@@ -89,6 +111,15 @@ def _import_exclusion_reasons() -> dict[str, str]:
         "parse_error": _("Parse error"),
         "empty_time_series": _("Empty time series"),
         "deleted_by_user": _("Deleted by user"),
+        "merged_duplicate": _("Merged as a cross-source duplicate"),
+    }
+
+
+def _activity_source_labels() -> dict[str, str]:
+    return {
+        "directory": _("Directory / Manual Upload"),
+        "strava": _("Strava"),
+        "hammerhead": _("Hammerhead"),
     }
 
 
@@ -150,11 +181,6 @@ def int_or_none(s: str) -> int | None:
     return None
 
 
-def _ui_config_default(field: str):
-    """Return the column default declared on ``UiConfig`` for display placeholders."""
-    return UiConfig.__table__.c[field].default.arg
-
-
 def _reprocess_all_activities(
     config: ActivityImportConfig,
     *,
@@ -203,13 +229,15 @@ def _reimport_time_series_from_files(
 
 def _truncate_user_content_tables() -> None:
     DB.session.execute(sqlalchemy.delete(activity_tag_association_table))
+    DB.session.execute(sqlalchemy.delete(DuplicateCandidate))
     DB.session.execute(sqlalchemy.delete(SegmentMatch))
     DB.session.execute(sqlalchemy.delete(SegmentCheck))
     DB.session.execute(sqlalchemy.delete(ActivityTile))
     DB.session.execute(sqlalchemy.delete(TileVisit))
     DB.session.execute(sqlalchemy.delete(ClusterHistoryEvent))
-    DB.session.execute(sqlalchemy.delete(ClusterHistoryCheckpoint))
+    DB.session.execute(sqlalchemy.delete(ClusterTileActivation))
     DB.session.execute(sqlalchemy.delete(ClusterMembership))
+    DB.session.execute(sqlalchemy.delete(FilteredClusterCache))
     DB.session.execute(sqlalchemy.delete(Photo))
     DB.session.execute(sqlalchemy.delete(Activity))
     DB.session.execute(sqlalchemy.delete(Segment))
@@ -240,7 +268,6 @@ def make_settings_blueprint(
     config_accessor: ConfigAccessor,
     authenticator: Authenticator,
     flasher: Flasher,
-    repository: ActivityRepository,
 ) -> Blueprint:
     blueprint = Blueprint("settings", __name__, template_folder="templates")
     register_directory_import_settings(
@@ -299,6 +326,113 @@ def make_settings_blueprint(
         )
         return redirect(url_for(".excluded_activities"))
 
+    @blueprint.route("/duplicate-matching", methods=["GET", "POST"])
+    @needs_authentication(authenticator)
+    def duplicate_matching():
+        config = config_accessor.activity_import()
+        source_labels = _activity_source_labels()
+
+        if request.method == "POST":
+            config.duplicate_matching_enabled = request.form.get("enabled") == "on"
+            config.duplicate_matching_auto_resolve = (
+                request.form.get("auto_resolve") == "on"
+            )
+            time_tolerance = int_or_none(request.form.get("time_tolerance_seconds"))
+            if time_tolerance is not None and time_tolerance >= 0:
+                config.duplicate_time_tolerance_seconds = time_tolerance
+            relative_tolerance = int_or_none(
+                request.form.get("relative_tolerance_percent")
+            )
+            if relative_tolerance is not None and relative_tolerance >= 0:
+                config.duplicate_relative_tolerance = relative_tolerance / 100
+
+            priorities = dict(config.duplicate_source_priorities)
+            for source in source_labels:
+                priority = int_or_none(request.form.get(f"priority_{source}"))
+                if priority is not None:
+                    priorities[source] = priority
+            config.duplicate_source_priorities = priorities
+
+            config_accessor.save()
+            flasher.flash_message(
+                _("Updated duplicate matching settings."), FlashTypes.SUCCESS
+            )
+            return redirect(url_for(".duplicate_matching"))
+
+        return render_template(
+            "settings/duplicate-matching.html.j2",
+            enabled=config.duplicate_matching_enabled,
+            auto_resolve=config.duplicate_matching_auto_resolve,
+            time_tolerance_seconds=config.duplicate_time_tolerance_seconds,
+            relative_tolerance_percent=round(config.duplicate_relative_tolerance * 100),
+            source_labels=source_labels,
+            priorities=config.duplicate_source_priorities,
+        )
+
+    @blueprint.route("/possible-duplicates")
+    @needs_authentication(authenticator)
+    def possible_duplicates():
+        config = config_accessor.activity_import()
+        candidates = DB.session.scalars(
+            sqlalchemy.select(DuplicateCandidate).order_by(
+                DuplicateCandidate.detected_at.desc()
+            )
+        ).all()
+        rows = []
+        for candidate in candidates:
+            suggested_winner = pick_winner(
+                candidate.activity_a, candidate.activity_b, config
+            )
+            rows.append(
+                {
+                    "candidate": candidate,
+                    "suggested_keep": (
+                        "a"
+                        if suggested_winner is candidate.activity_a
+                        else "b"
+                        if suggested_winner is candidate.activity_b
+                        else None
+                    ),
+                }
+            )
+        return render_template(
+            "settings/possible-duplicates.html.j2",
+            rows=rows,
+        )
+
+    @blueprint.route("/possible-duplicates/resolve/<int:id>", methods=["POST"])
+    @needs_authentication(authenticator)
+    def possible_duplicates_resolve(id: int):
+        candidate = DB.session.get_one(DuplicateCandidate, id)
+        keep = request.form.get("keep")
+        if keep == "a":
+            winner, loser = candidate.activity_a, candidate.activity_b
+        elif keep == "b":
+            winner, loser = candidate.activity_b, candidate.activity_a
+        else:
+            flasher.flash_message(_("Invalid choice."), FlashTypes.DANGER)
+            return redirect(url_for(".possible_duplicates"))
+        merge_duplicate(winner, loser)
+        flasher.flash_message(
+            _("Merged the duplicate; the other activity has been removed."),
+            FlashTypes.SUCCESS,
+        )
+        return redirect(url_for(".possible_duplicates"))
+
+    @blueprint.route("/possible-duplicates/dismiss/<int:id>", methods=["POST"])
+    @needs_authentication(authenticator)
+    def possible_duplicates_dismiss(id: int):
+        candidate = DB.session.get_one(DuplicateCandidate, id)
+        DB.session.delete(candidate)
+        DB.session.commit()
+        flasher.flash_message(
+            _(
+                "Dismissed; these activities will not be flagged as duplicates of each other again unless re-imported."
+            ),
+            FlashTypes.SUCCESS,
+        )
+        return redirect(url_for(".possible_duplicates"))
+
     @blueprint.route("/maintenance", methods=["GET", "POST"])
     @needs_authentication(authenticator)
     def maintenance():
@@ -307,10 +441,38 @@ def make_settings_blueprint(
             if action == "reset_tile_visit_state":
                 logger.info("User requested reset of tile visit state.")
                 _reset_tile_visits_db()
-                compute_tile_visits_new(repository)
+                compute_tile_visits_new()
                 compute_tile_evolution(config_accessor.ui())
                 flasher.flash_message(
                     _("Tile visit state has been reset and re-indexed."),
+                    FlashTypes.SUCCESS,
+                )
+            elif action == "clear_filtered_cluster_cache":
+                logger.info("User requested reset of the filtered cluster cache.")
+                dropped = delete_filtered_cluster_cache()
+                flasher.flash_message(
+                    _("Cleared %(dropped)s cached filtered cluster states.")
+                    % {"dropped": dropped},
+                    FlashTypes.SUCCESS,
+                )
+            elif action == "cleanup_filtered_cluster_cache_stale":
+                logger.info("User requested cleanup of the filtered cluster cache.")
+                cutoff = datetime.datetime.now() - datetime.timedelta(days=182)
+                dropped = delete_stale_filtered_cluster_cache(cutoff)
+                flasher.flash_message(
+                    _(
+                        "Dropped %(dropped)s cached filtered cluster states (unused for six months)."
+                    )
+                    % {"dropped": dropped},
+                    FlashTypes.SUCCESS,
+                )
+            elif action == "rebuild_cluster_history":
+                logger.info("User requested rebuild of the cluster history.")
+                for zoom in config_accessor.ui().explorer_zoom_levels:
+                    compute_current_state_for_zoom(zoom)
+                    rebuild_cluster_history(zoom)
+                flasher.flash_message(
+                    _("The explorer tile history has been recomputed."),
                     FlashTypes.SUCCESS,
                 )
             elif action == "reenrich_all_activities":
@@ -396,7 +558,12 @@ def make_settings_blueprint(
                     FlashTypes.SUCCESS,
                 )
             return redirect(url_for(".maintenance"))
-        return render_template("settings/maintenance.html.j2")
+        cache_count, cache_bytes = get_filtered_cluster_cache_stats()
+        return render_template(
+            "settings/maintenance.html.j2",
+            filtered_cluster_cache_count=cache_count,
+            filtered_cluster_cache_kib=round(cache_bytes / 1024),
+        )
 
     @blueprint.route("/language", methods=["GET", "POST"])
     @needs_authentication(authenticator)
@@ -473,7 +640,7 @@ def make_settings_blueprint(
                 tile_y=request.args["tile_y"],
             )
 
-    @blueprint.route("/cluster-bookmarks/delete/<int:id>")
+    @blueprint.route("/cluster-bookmarks/delete/<int:id>", methods=["POST"])
     @needs_authentication(authenticator)
     def cluster_bookmark_delete(id: int):
         bookmark = DB.session.get_one(ExplorerTileBookmark, id)
@@ -523,66 +690,120 @@ def make_settings_blueprint(
             color_scheme_for_heatmap_avail=MATPLOTLIB_COLOR_SCHEMES_CONTINUOUS,
         )
 
-    @blueprint.route("/color-strategy", methods=["GET", "POST"])
+    @blueprint.route("/tile-rendering", methods=["GET", "POST"])
     @needs_authentication(authenticator)
-    def color_strategy():
-        color_fields = [
-            ("color_strategy_max_cluster_color", _("Max cluster")),
+    def tile_rendering():
+        labels = {
+            TileStyleName.VISITED: _("Visited"),
+            TileStyleName.MISSING: _("Missing"),
+            TileStyleName.NEW_TILE: _("New in this activity"),
+            TileStyleName.NEW_TILE_NEW_CLUSTER: _(
+                "New in this activity, joined a cluster"
+            ),
+            TileStyleName.VISITED_NEW_CLUSTER: _(
+                "Visited before, joined a cluster in this activity"
+            ),
+            TileStyleName.MAX_CLUSTER: _("Part of max cluster"),
+            TileStyleName.OTHER_CLUSTER: _("Part of other cluster"),
+            TileStyleName.OLD_CLUSTER: _("Part of cluster before this activity"),
+            TileStyleName.INACCESSIBLE: _("Inaccessible"),
+        }
+        groups = [
             (
-                "color_strategy_max_cluster_other_color",
-                _("Other clusters besides the maximum"),
+                _("Tile state"),
+                _(
+                    "These roles mean the same thing in every color strategy that "
+                    "uses them: whether a tile has been visited at all, is missing, "
+                    "or was marked inaccessible."
+                ),
+                [
+                    TileStyleName.VISITED,
+                    TileStyleName.MISSING,
+                    TileStyleName.INACCESSIBLE,
+                ],
             ),
             (
-                "color_strategy_visited_color",
-                _("Visited tiles that are not part of a cluster"),
+                _("Cluster layer"),
+                _(
+                    "Used together by the “Max Cluster” color strategy to set apart "
+                    "the largest cluster from the rest."
+                ),
+                [TileStyleName.MAX_CLUSTER, TileStyleName.OTHER_CLUSTER],
             ),
             (
-                "color_strategy_new_tile_color",
-                _("Tiles newly discovered by an activity"),
-            ),
-            (
-                "color_strategy_new_cluster_color",
-                _("Tiles that joined a cluster with an activity"),
+                _("Activity highlight layer"),
+                _(
+                    "Used together by the “New Tiles & Cluster Growth” color "
+                    "strategy to show what one activity changed: newly visited "
+                    "tiles, tiles that newly joined a cluster, and tiles that were "
+                    "already part of a cluster before."
+                ),
+                [
+                    TileStyleName.NEW_TILE,
+                    TileStyleName.NEW_TILE_NEW_CLUSTER,
+                    TileStyleName.VISITED_NEW_CLUSTER,
+                    TileStyleName.OLD_CLUSTER,
+                ],
             ),
         ]
+        styles = get_tile_styles()
 
         if request.method == "POST":
-            for field, _label in color_fields:
-                setattr(
-                    config_accessor.ui(),
-                    field,
-                    _combine_color(
-                        request.form[field], int(request.form[f"{field}_alpha"])
-                    ),
+            for name, style in styles.items():
+                for element in ("fill", "border", "stripe"):
+                    setattr(
+                        style,
+                        f"{element}_color",
+                        _combine_color(
+                            request.form[f"{name}_{element}_color"],
+                            int(request.form[f"{name}_{element}_alpha"]),
+                        ),
+                    )
+                style.border_width = max(0, int(request.form[f"{name}_border_width"]))
+                style.border_stroke = BorderStroke(
+                    request.form[f"{name}_border_stroke"]
                 )
             config_accessor.ui().color_strategy_cmap_opacity = float(
                 request.form["cmap_opacity"]
             )
             config_accessor.save()
-            flash(_("Updated color strategy values."), category="success")
+            flash(_("Updated tile rendering."), category="success")
 
-        colors = []
-        for field, label in color_fields:
-            color, alpha = _split_hex_into_color_alpha(
-                getattr(config_accessor.ui(), field)
-            )
-            color_default, alpha_default = _split_hex_into_color_alpha(
-                _ui_config_default(field)
-            )
-            colors.append(
-                {
-                    "field": field,
-                    "label": label,
-                    "color": color,
-                    "alpha": alpha,
-                    "color_default": color_default,
-                    "alpha_default": alpha_default,
-                }
-            )
+        def entry(name: TileStyleName) -> dict:
+            style = styles[name]
+            return {
+                "name": name,
+                "label": labels[name],
+                "style": style,
+                "default_colors": {
+                    element: _split_hex_into_color_alpha(
+                        TILE_STYLE_DEFAULTS[name][f"{element}_color"]
+                    )
+                    for element in ("fill", "border", "stripe")
+                },
+                "defaults": TILE_STYLE_DEFAULTS[name],
+                "colors": {
+                    element: _split_hex_into_color_alpha(
+                        getattr(style, f"{element}_color")
+                    )
+                    for element in ("fill", "border", "stripe")
+                },
+            }
 
         return render_template(
-            "settings/color-strategy.html.j2",
-            colors=colors,
+            "settings/tile-rendering.html.j2",
+            tile_style_groups=[
+                {
+                    "label": group_label,
+                    "description": description,
+                    "entries": [entry(name) for name in names],
+                }
+                for group_label, description, names in groups
+            ],
+            border_strokes=[
+                (BorderStroke.SOLID, _("Solid")),
+                (BorderStroke.DASHED, _("Dashed")),
+            ],
             cmap_opacity=config_accessor.ui().color_strategy_cmap_opacity,
         )
 
@@ -604,9 +825,6 @@ def make_settings_blueprint(
                 flasher.flash_message("Kind name is required.", FlashTypes.DANGER)
                 return redirect(url_for(".kinds_new"))
 
-            consider_for_achievements = (
-                request.form.get("consider_for_achievements") == "on"
-            )
             default_equipment_id = request.form.get("default_equipment_id")
             default_equipment_id = (
                 int(default_equipment_id) if default_equipment_id else None
@@ -614,7 +832,7 @@ def make_settings_blueprint(
             replaced_by_id = request.form.get("replaced_by_id")
             replaced_by_id = int(replaced_by_id) if replaced_by_id else None
 
-            kind = Kind(name=name, consider_for_achievements=consider_for_achievements)
+            kind = Kind(name=name)
             if default_equipment_id:
                 kind.default_equipment_id = default_equipment_id
             if replaced_by_id:
@@ -646,9 +864,6 @@ def make_settings_blueprint(
                 flasher.flash_message("Kind name is required.", FlashTypes.DANGER)
                 return redirect(url_for(".kinds_edit", id=id))
 
-            consider_for_achievements = (
-                request.form.get("consider_for_achievements") == "on"
-            )
             default_equipment_id = request.form.get("default_equipment_id")
             default_equipment_id = (
                 int(default_equipment_id) if default_equipment_id else None
@@ -667,7 +882,6 @@ def make_settings_blueprint(
 
             # Update kind
             kind.name = name
-            kind.consider_for_achievements = consider_for_achievements
             kind.default_equipment_id = default_equipment_id
             old_replaced_by_id = kind.replaced_by_id
             kind.replaced_by_id = replaced_by_id
@@ -703,7 +917,7 @@ def make_settings_blueprint(
             equipments=equipments,
         )
 
-    @blueprint.route("/manage-kinds/delete/<int:id>")
+    @blueprint.route("/manage-kinds/delete/<int:id>", methods=["POST"])
     @needs_authentication(authenticator)
     def kinds_delete(id: int):
         kind = DB.session.get_one(Kind, id)
@@ -803,6 +1017,106 @@ def make_settings_blueprint(
                 )
                 for col in TOGGLEABLE_TABLE_COLUMNS
             ],
+        )
+
+    @blueprint.route("/explorer-zoom-levels", methods=["GET", "POST"])
+    @needs_authentication(authenticator)
+    def explorer_zoom_levels():
+        ui_config = config_accessor.ui()
+        if request.method == "POST":
+            selected = {
+                int(value)
+                for value in request.form.getlist("zoom")
+                if value.isdigit() and 0 <= int(value) <= 19
+            }
+            if selected:
+                previous = set(ui_config.explorer_zoom_levels)
+                ui_config.explorer_zoom_levels = sorted(selected)
+                config_accessor.save()
+                for zoom in sorted(previous - selected):
+                    delete_tile_evolution(zoom)
+                added = sorted(selected - previous)
+                if added:
+                    compute_tile_evolution(ui_config, added)
+                flasher.flash_message(
+                    _("Updated explorer zoom levels."), FlashTypes.SUCCESS
+                )
+            else:
+                flasher.flash_message(
+                    _("At least one zoom level has to be enabled."), FlashTypes.WARNING
+                )
+        return render_template(
+            "settings/explorer-zoom-levels.html.j2",
+            zoom_levels=[
+                (
+                    zoom,
+                    EXPLORER_ZOOM_LEVEL_NAMES.get(zoom, ""),
+                    zoom in ui_config.explorer_zoom_levels,
+                )
+                for zoom in sorted(
+                    set(SELECTABLE_EXPLORER_ZOOM_LEVELS)
+                    | set(ui_config.explorer_zoom_levels)
+                )
+            ],
+        )
+
+    @blueprint.route("/explorer-counted-activities")
+    @needs_authentication(authenticator)
+    def explorer_counted_activities():
+        ui_config = config_accessor.ui()
+        selected_kinds = set(json.loads(ui_config.explorer_filter_json).get("kind", []))
+        return render_template(
+            "settings/explorer-counted-activities.html.j2",
+            kinds=[
+                (kind.id, kind.name, kind.id in selected_kinds)
+                for kind in DB.session.scalars(
+                    sqlalchemy.select(Kind).order_by(Kind.name)
+                ).all()
+            ],
+        )
+
+    @blueprint.route("/explorer-filter", methods=["POST"])
+    @needs_authentication(authenticator)
+    def explorer_filter():
+        ui_config = config_accessor.ui()
+        selected = sorted(
+            int(value) for value in request.form.getlist("kind") if value.isdigit()
+        )
+        primitives = {"kind": selected} if selected else {}
+        if primitives != json.loads(ui_config.explorer_filter_json):
+            ui_config.explorer_filter_json = json.dumps(primitives, sort_keys=True)
+            config_accessor.save()
+            rebuild_tile_visits_from_activity_tiles()
+            for zoom in ui_config.explorer_zoom_levels:
+                compute_current_state_for_zoom(zoom)
+            mark_cluster_history_stale(ui_config.explorer_zoom_levels)
+        flasher.flash_message(
+            _("Updated the activities counting for explorer tiles."),
+            FlashTypes.SUCCESS,
+        )
+        return redirect(url_for(".explorer_counted_activities"))
+
+    @blueprint.route("/explorer-tiles", methods=["GET", "POST"])
+    @needs_authentication(authenticator)
+    def explorer_tiles():
+        ui_config = config_accessor.ui()
+        if request.method == "POST":
+            wanted = request.form.get("count_inaccessible_in_cluster") == "on"
+            if wanted != ui_config.count_inaccessible_in_cluster:
+                ui_config.count_inaccessible_in_cluster = wanted
+                config_accessor.save()
+                # Cluster and square change immediately; the history is only
+                # flagged, because replaying it is expensive.
+                for zoom in ui_config.explorer_zoom_levels:
+                    compute_current_state_for_zoom(zoom)
+                delete_filtered_cluster_cache()
+                mark_cluster_history_stale(ui_config.explorer_zoom_levels)
+            flasher.flash_message(
+                _("Updated explorer tile settings."), FlashTypes.SUCCESS
+            )
+        return render_template(
+            "settings/explorer-tiles.html.j2",
+            count_inaccessible_in_cluster=ui_config.count_inaccessible_in_cluster,
         )
 
     @blueprint.route("/map-display", methods=["GET", "POST"])

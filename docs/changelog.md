@@ -18,6 +18,61 @@ Types of changes
 ## Unreleased
 
 
+## Version 1.48.0 — 2026-08-14
+
+Added:
+
+- Add cross-source duplicate matching that is based on starting time and distance/duration. This is an opt-in feature, see Settings → Duplicate Matching. Duplicates can be looked at and resolved manually. You can also enable auto-resolution and set priorities for the sources. ([GH-473](https://github.com/martin-ueding/geo-activity-playground/issues/473))
+
+Changed:
+
+- Simplify the "latest new" explorer color strategy:
+  - It is now a stand-alone layer that doesn't need to be composed with other layers.
+  - The tile styles expose ever possible combination instead of relying on the user to find a coloring scheme that composes. ([GH-366](https://github.com/martin-ueding/geo-activity-playground/issues/366))
+  - On the settings page, the different styles are grouped by the layer that use them.
+- Docker images are now built by installing the published PyPI release directly instead of from a source checkout, so they always reflect a stable, already-tested release.
+- Use a bundler for all external ES resources.
+- Stop recomputing tile visits and explorer tile state every 50 activities during the directory import.
+- Group the "Explorer Levels" (previously "Explorer Zoom Levels"), "Counted Activities" (split out of "Explorer Tiles"), "Inaccessible Tiles" (previously "Explorer Tiles"), and "Tile Coloring" (previously "Tile Rendering") settings pages under their own "Explorer Tiles" section in the settings navigation, instead of scattering them across "Display".
+- Regroup the main navigation.
+- Highlight the current page in the main navigation.
+
+Fixed:
+
+- Discard corrupted legacy heatmap cache files during the startup import into the database instead of aborting the whole import and re-logging the same error on every startup.
+- Tiles marked as inaccessible are no longer drawn in the `missing` color strategy of the explorer tile URL, matching the existing exclusion in the missing-tiles downloads. ([GH-478](https://github.com/martin-ueding/geo-activity-playground/issues/478))
+- Fix race condition when creating default explorer color styles.
+
+Security:
+
+- Stop loading the `leaflet-relief` hillshade plugin from a jsDelivr CDN at runtime; it's now bundled locally like the rest of the webui's JavaScript dependencies.
+- Routes that delete or otherwise mutate data (bookmarks, search queries, segments, maintenance actions and tasks, plot specs, kinds, explorer tile state, logout, activity re-import) now require `POST` instead of accepting plain `GET`. A `GET` route can be triggered merely by following a link — by a crawler, a browser's link prefetching, or a malicious page — without any confirmation.
+
+## Version 1.47.0 — 2026-08-08
+
+Added:
+
+- Explorer tiles now respect the activity filter. ([GH-480](https://github.com/martin-ueding/geo-activity-playground/issues/480))
+  - A settings page to choose which activity kinds count toward explorer tiles, replacing the per-kind “consider for achievements” switch. Changing it no longer requires re-importing anything.
+- Inaccessible tiles can optionally count toward cluster and square.. ([GH-481](https://github.com/martin-ueding/geo-activity-playground/issues/481))
+- The rendering of explorer tiles can now be fully customized. For each kind of special tile (e.g. visited, missing, new in this activity), you can set a fill color, border color, border style and stripe color. ([GH-366](https://github.com/martin-ueding/geo-activity-playground/issues/366))
+- Expose the selection of explorer zoom levels other than 14 and 17. ([GH-483](https://github.com/martin-ueding/geo-activity-playground/issues/483))
+- New map layer per explorer zoom level that draws the track of the most recent activity which discovered a tile at that zoom level as a red line. It is available as the overlay tile URL `/explorer/{zoom}/latest-new-tiles-activity/{z}/{x}/{y}.png` and as the `latest_new_activity` kind in the combined style JSON. ([GH-366](https://github.com/martin-ueding/geo-activity-playground/issues/366))
+
+Changed:
+
+- The cluster and square evolution plots load after the rest of the Explorer Tiles page, so the page itself is no longer held up by them.
+- Enable “Mapterhorn Hillshade” overlay by default. ([GH-489](https://github.com/martin-ueding/geo-activity-playground/issues/489))
+
+Fixed:
+
+- The heatmap overlay on the Explorer Tiles page ignored the activity filter.
+- Activities of a kind that does not count for explorer tiles could still become the recorded first or last visitor of a tile when an activity's start time changed. Car and train rides no longer leak into the tile visit metadata that way.
+- The cluster size evolution plot includes the moment the first cluster tile appeared, which was previously omitted. ([GH-481](https://github.com/martin-ueding/geo-activity-playground/issues/481))
+- Marking a tile as inaccessible updates the “Inaccessible Tiles” layer right away. ([GH-478](https://github.com/martin-ueding/geo-activity-playground/issues/478))
+- The “Mapterhorn Hillshade” overlay is upscaled above zoom level 17 instead of vanishing. ([GH-475](https://github.com/martin-ueding/geo-activity-playground/issues/475))
+- The aggregate map on “Activities Overview & Search (Map)” left out tracks. Activities recorded in several segments used up a separate line budget, so the map stopped short of the promised 100 activities, and it drew the oldest activities instead of the latest ones.
+
 ## Version 1.46.0 — 2026-08-03
 
 Added:

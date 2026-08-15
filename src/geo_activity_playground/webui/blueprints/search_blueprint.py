@@ -14,15 +14,13 @@ from ...core.config import ConfigAccessor
 from ...core.datamodel import DB, Activity, StoredSearchQuery
 from ...core.meta_search import (
     apply_search_filter,
-    get_stored_queries,
     parse_search_params,
-    primitives_to_jinja,
     primitives_to_json,
-    primitives_to_url_str,
     register_search_query,
 )
 from ...features.heatmap.cache import delete_heatmap_cache_for_query
 from ..authenticator import Authenticator, needs_authentication
+from ..search_context import search_context
 
 
 def make_search_blueprint(
@@ -30,14 +28,10 @@ def make_search_blueprint(
 ) -> Blueprint:
     blueprint = Blueprint("search", __name__, template_folder="templates")
     aggregate_map_activity_cap = 100
-    aggregate_map_max_lines = 100
 
     @blueprint.route("/")
     def index():
-        primitives = parse_search_params(request.args)
-
-        if authenticator.is_authenticated():
-            register_search_query(primitives)
+        primitives, search_vars = search_context(authenticator)
 
         activities = apply_search_filter(primitives)
         total = len(activities)
@@ -54,14 +48,6 @@ def make_search_blueprint(
             float(activities["elevation_gain"].fillna(0).sum()) if total else 0.0
         )
 
-        stored_queries = get_stored_queries()
-        search_query_favorites = [
-            (str(q), q.to_url_str()) for q in stored_queries if q.is_favorite
-        ]
-        search_query_last = [
-            (str(q), q.to_url_str()) for q in stored_queries if not q.is_favorite
-        ]
-
         return render_template(
             "search/index.html.j2",
             activities=reversed(list(activities.iterrows())),
@@ -69,20 +55,14 @@ def make_search_blueprint(
             total_elapsed_time=total_elapsed_time,
             total_distance_km=total_distance_km,
             total_elevation_gain_m=total_elevation_gain_m,
-            base_query_str=primitives_to_url_str(primitives),
-            query=primitives_to_jinja(primitives),
-            search_query_favorites=search_query_favorites,
-            search_query_last=search_query_last,
+            **search_vars,
         )
 
     @blueprint.route("/map")
     def map_view():
-        primitives = parse_search_params(request.args)
+        primitives, search_vars = search_context(authenticator)
         per_page = config_accessor.ui().search_map_tiles_per_page
         page = max(1, int(request.args.get("page", 1)))
-
-        if authenticator.is_authenticated():
-            register_search_query(primitives)
 
         activities = apply_search_filter(primitives)
         total = len(activities)
@@ -93,15 +73,6 @@ def make_search_blueprint(
         page_df = newest_first.iloc[slice_start : slice_start + per_page]
         activities_page = list(page_df.iterrows())
 
-        stored_queries = get_stored_queries()
-        search_query_favorites = [
-            (str(q), q.to_url_str()) for q in stored_queries if q.is_favorite
-        ]
-        search_query_last = [
-            (str(q), q.to_url_str()) for q in stored_queries if not q.is_favorite
-        ]
-
-        base_query_str = primitives_to_url_str(primitives)
         pagination_first = (page - 1) * per_page + 1 if total else 0
         pagination_last = min(page * per_page, total)
         elapsed_seconds = (
@@ -126,14 +97,11 @@ def make_search_blueprint(
             total_pages=total_pages,
             pagination_first=pagination_first,
             pagination_last=pagination_last,
-            base_query_str=base_query_str,
             total_elapsed_time=total_elapsed_time,
             total_distance_km=total_distance_km,
             total_elevation_gain_m=total_elevation_gain_m,
             aggregate_map_count=min(total, aggregate_map_activity_cap),
-            query=primitives_to_jinja(primitives),
-            search_query_favorites=search_query_favorites,
-            search_query_last=search_query_last,
+            **search_vars,
         )
 
     @blueprint.route("/map/aggregate.geojson")
@@ -141,13 +109,14 @@ def make_search_blueprint(
         primitives = parse_search_params(request.args)
         activities = apply_search_filter(primitives).iloc[::-1]
         activity_ids = activities["id"].head(aggregate_map_activity_cap).tolist()
+        rank = {activity_id: i for i, activity_id in enumerate(activity_ids)}
         features = []
         cmap = colormaps["Dark2"]
-        line_count = 0
-        for i, activity in enumerate(
+        for activity in sorted(
             DB.session.scalars(
                 sqlalchemy.select(Activity).where(Activity.id.in_(activity_ids))
-            ).all()
+            ).all(),
+            key=lambda activity: rank[activity.id],
         ):
             time_series = activity.time_series
             if "latitude" not in time_series or "longitude" not in time_series:
@@ -157,9 +126,8 @@ def make_search_blueprint(
                 if "segment_id" in time_series.columns
                 else [(0, time_series)]
             )
+            color = to_hex(cmap(rank[activity.id] % 8))
             for _, group in grouped:
-                if line_count >= aggregate_map_max_lines:
-                    break
                 coordinates = [
                     [lon, lat]
                     for lat, lon in zip(group["latitude"], group["longitude"])
@@ -172,19 +140,16 @@ def make_search_blueprint(
                             properties={
                                 "activity_id": activity.id,
                                 "activity_name": activity.name,
-                                "color": to_hex(cmap(i % 8)),
+                                "color": color,
                             },
                         )
                     )
-                    line_count += 1
-            if line_count >= aggregate_map_max_lines:
-                break
         return Response(
             geojson.dumps(geojson.FeatureCollection(features=features)),
             mimetype="application/json",
         )
 
-    @blueprint.route("/save-search-query")
+    @blueprint.route("/save-search-query", methods=["POST"])
     @needs_authentication(authenticator)
     def save_search_query():
         primitives = parse_search_params(request.args)
@@ -209,7 +174,7 @@ def make_search_blueprint(
 
         return redirect(urllib.parse.unquote_plus(request.args["redirect"]))
 
-    @blueprint.route("/delete-search-query")
+    @blueprint.route("/delete-search-query", methods=["POST"])
     @needs_authentication(authenticator)
     def delete_search_query():
         primitives = parse_search_params(request.args)

@@ -43,7 +43,6 @@ class ActivityMeta(TypedDict):
     average_speed_moving_kmh: float
     calories: float
     commute: bool
-    consider_for_achievements: bool
     copernicus_elevation_gain: float
     distance_km: float
     elapsed_time: datetime.timedelta
@@ -241,6 +240,30 @@ class Activity(DB.Model):
             return None
 
 
+class DuplicateCandidate(DB.Model):
+    """A pair of activities from different sources suspected to be the same ride.
+
+    Detected when a newly imported activity's start time and distance/duration
+    are close to an existing activity from a different source. Cleared once
+    the user resolves it (merging one into the other) or it is auto-resolved.
+    """
+
+    __tablename__ = "duplicate_candidates"
+    __table_args__ = (sa.UniqueConstraint("activity_a_id", "activity_b_id"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    activity_a_id: Mapped[int] = mapped_column(
+        ForeignKey("activities.id"), nullable=False
+    )
+    activity_b_id: Mapped[int] = mapped_column(
+        ForeignKey("activities.id"), nullable=False
+    )
+    detected_at: Mapped[datetime.datetime] = mapped_column(sa.DateTime, nullable=False)
+
+    activity_a: Mapped["Activity"] = relationship(foreign_keys=[activity_a_id])
+    activity_b: Mapped["Activity"] = relationship(foreign_keys=[activity_b_id])
+
+
 class Tag(DB.Model):
     __tablename__ = "tags"
     __table_args__ = (sa.UniqueConstraint("tag", name="tags_tag"),)
@@ -269,6 +292,50 @@ def get_or_make_tag(tag: str) -> Tag:
         return tag
 
 
+def count_activities() -> int:
+    return DB.session.scalars(
+        sqlalchemy.select(sqlalchemy.func.count()).select_from(Activity)
+    ).one()
+
+
+def last_activity_date() -> datetime.datetime | None:
+    result = DB.session.scalars(
+        sqlalchemy.select(Activity).order_by(Activity.start)
+    ).all()
+    if result:
+        return result[-1].start_local_tz
+    else:
+        return None
+
+
+def get_activity_ids() -> list[int]:
+    return DB.session.scalars(
+        sqlalchemy.select(Activity.id).order_by(Activity.start, Activity.id)
+    ).all()
+
+
+def iter_activities(new_to_old: bool = True, drop_na: bool = False) -> list[Activity]:
+    query = sqlalchemy.select(Activity)
+    if drop_na:
+        query = query.where(Activity.start.is_not(None))
+    result = DB.session.scalars(query.order_by(Activity.start)).all()
+    direction = -1 if new_to_old else 1
+    return result[::direction]
+
+
+def get_activity_by_id(id: int) -> Activity:
+    activity = DB.session.scalar(
+        sqlalchemy.select(Activity).where(Activity.id == int(id))
+    )
+    if activity is None:
+        raise ValueError(f"Cannot find activity {id} in DB.session.")
+    return activity
+
+
+def get_time_series(id: int) -> pd.DataFrame:
+    return get_activity_by_id(id).time_series
+
+
 def query_activity_meta(clauses: list | None = None) -> pd.DataFrame:
     if clauses is None:
         clauses = []
@@ -293,7 +360,6 @@ def query_activity_meta(clauses: list | None = None) -> pd.DataFrame:
             Activity.steps,
             Activity.num_new_tiles_14,
             Activity.num_new_tiles_17,
-            Kind.consider_for_achievements,
             Equipment.name.label("equipment"),
             Kind.name.label("kind"),
         )
@@ -417,9 +483,6 @@ class Kind(DB.Model):
     id: Mapped[int] = mapped_column(primary_key=True)
 
     name: Mapped[str] = mapped_column(String)
-    consider_for_achievements: Mapped[bool] = mapped_column(
-        sa.Boolean, default=True, nullable=False
-    )
 
     activities: Mapped[list["Activity"]] = relationship(
         back_populates="kind", cascade="all, delete-orphan"
@@ -449,10 +512,7 @@ def get_or_make_kind(name: str) -> Kind:
         kind = kinds[0]
         return kind.replaced_by or kind
     else:
-        kind = Kind(
-            name=name,
-            consider_for_achievements=True,
-        )
+        kind = Kind(name=name)
         return kind
 
 
@@ -510,9 +570,9 @@ class TileVisit(DB.Model):
 class ActivityTile(DB.Model):
     """Which activities pass through which tile, per zoom level.
 
-    Replaces the in-memory ``activities_per_tile`` structure. Queried by
-    viewport/tile for the heatmap, the "activities through tile" view, and
-    segment matching.
+    This is the unfiltered record of every activity, which makes it the source
+    the tile visit aggregate is derived from. Also queried by viewport/tile for
+    the heatmap, the "activities through tile" view, and segment matching.
     """
 
     __tablename__ = "activity_tile"
@@ -526,9 +586,16 @@ class ActivityTile(DB.Model):
         nullable=False,
         index=True,
     )
+    time: Mapped[datetime.datetime | None] = mapped_column(sa.DateTime, nullable=True)
+    """When the activity entered this tile.
+
+    ``None`` for rows written before this was recorded; the activity start time
+    is used instead, which is coarser when two rides overlap in time.
+    """
 
     __table_args__ = (
         sa.Index("idx_activity_tile_zoom_tile", "zoom", "tile_x", "tile_y"),
+        sa.Index("idx_activity_tile_zoom_activity", "zoom", "activity_id"),
     )
 
 
@@ -660,6 +727,30 @@ class ActivityImportConfig(DB.Model):
         sa.Integer, nullable=False, default=100
     )
     upload_password: Mapped[str | None] = mapped_column(sa.String, nullable=True)
+    duplicate_matching_enabled: Mapped[bool] = mapped_column(
+        sa.Boolean, nullable=False, default=False, server_default=sa.false()
+    )
+    duplicate_matching_auto_resolve: Mapped[bool] = mapped_column(
+        sa.Boolean, nullable=False, default=False, server_default=sa.false()
+    )
+    duplicate_time_tolerance_seconds: Mapped[int] = mapped_column(
+        sa.Integer, nullable=False, default=300, server_default="300"
+    )
+    duplicate_relative_tolerance: Mapped[float] = mapped_column(
+        sa.Float, nullable=False, default=0.1, server_default="0.1"
+    )
+    duplicate_source_priorities: Mapped[dict[str, int]] = mapped_column(
+        MutableDict.as_mutable(sa.JSON),
+        nullable=False,
+        default=lambda: {"directory": 10, "strava": 20, "hammerhead": 30},
+        server_default='{"directory": 10, "strava": 20, "hammerhead": 30}',
+    )
+    """Lower number wins when a cross-source duplicate is auto-resolved.
+
+    Sources missing from this mapping are treated as lowest priority, so an
+    activity from a source added later never silently wins over one that is
+    already ranked.
+    """
 
 
 class UiConfig(DB.Model):
@@ -680,21 +771,6 @@ class UiConfig(DB.Model):
     color_scheme_for_heatmap: Mapped[str] = mapped_column(
         sa.String, nullable=False, default="hot"
     )
-    color_strategy_max_cluster_color: Mapped[str] = mapped_column(
-        sa.String, nullable=False, default="#377eb84d"
-    )
-    color_strategy_max_cluster_other_color: Mapped[str] = mapped_column(
-        sa.String, nullable=False, default="#4daf4a4d"
-    )
-    color_strategy_visited_color: Mapped[str] = mapped_column(
-        sa.String, nullable=False, default="#0000004d"
-    )
-    color_strategy_new_tile_color: Mapped[str] = mapped_column(
-        sa.String, nullable=False, default="#ff7700ff", server_default="#ff7700ff"
-    )
-    color_strategy_new_cluster_color: Mapped[str] = mapped_column(
-        sa.String, nullable=False, default="#0066ffff", server_default="#0066ffff"
-    )
     color_strategy_cmap_opacity: Mapped[float] = mapped_column(
         sa.Float, nullable=False, default=0.5
     )
@@ -707,6 +783,18 @@ class UiConfig(DB.Model):
     explorer_zoom_levels: Mapped[list[int]] = mapped_column(
         MutableList.as_mutable(sa.JSON), nullable=False, default=lambda: [14, 17]
     )
+    count_inaccessible_in_cluster: Mapped[bool] = mapped_column(
+        sa.Boolean, nullable=False, default=False, server_default=sa.false()
+    )
+    explorer_filter_json: Mapped[str] = mapped_column(
+        sa.Text, nullable=False, default="{}", server_default="{}"
+    )
+    """Search primitives deciding which activities count for explorer tiles.
+
+    An empty object counts every activity. This replaces the former
+    ``Kind.consider_for_achievements`` flag, which had to be applied while
+    building the tile visits and could therefore not be varied afterwards.
+    """
     show_progress_markers: Mapped[bool] = mapped_column(
         sa.Boolean, nullable=False, default=True
     )

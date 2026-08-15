@@ -9,8 +9,8 @@ import pandas as pd
 from PIL import Image, ImageDraw
 from tqdm import tqdm
 
-from ...core.activities import ActivityRepository
 from ...core.config import ConfigAccessor
+from ...core.datamodel import count_activities, get_time_series, iter_activities
 from ...core.raster_map import (
     OSM_TILE_SIZE,
     convert_to_grayscale,
@@ -66,8 +66,7 @@ def register_main_heatmap_video(subparsers: argparse._SubParsersAction) -> None:
 
 
 def _render_heatmap_video(options, zoom: int, video_size) -> None:
-    repository = ActivityRepository()
-    assert len(repository) > 0
+    assert count_activities() > 0
     config_accessor = ConfigAccessor()
 
     center_xy = compute_tile_float(options.latitude, options.longitude, zoom)
@@ -79,9 +78,7 @@ def _render_heatmap_video(options, zoom: int, video_size) -> None:
     background = 1.0 - background  # invert colors
 
     activities_per_day = collections.defaultdict(set)
-    for activity in tqdm(
-        repository.iter_activities(), desc="Gather activities per day"
-    ):
+    for activity in tqdm(iter_activities(), desc="Gather activities per day"):
         activities_per_day[activity["start"].date()].add(activity["id"])
 
     running_counts = np.zeros(background.shape[:2], np.float64)
@@ -97,7 +94,7 @@ def _render_heatmap_video(options, zoom: int, video_size) -> None:
             im = Image.new("L", video_size)
             draw = ImageDraw.Draw(im)
 
-            time_series = repository.get_time_series(activity_id)
+            time_series = get_time_series(activity_id)
             for _, group in time_series.groupby("segment_id"):
                 tile_xz = group["x"] * 2**zoom
                 tile_yz = group["y"] * 2**zoom

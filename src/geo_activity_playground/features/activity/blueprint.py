@@ -22,7 +22,6 @@ from flask.typing import ResponseReturnValue
 from flask_babel import gettext as _
 
 from ...core.activities import (
-    ActivityRepository,
     make_geojson_from_time_series,
     make_geojson_line_segments_with_columns,
     make_geojson_progress_markers_from_time_series,
@@ -36,8 +35,12 @@ from ...core.datamodel import (
     Equipment,
     Kind,
     Tag,
+    get_activity_by_id,
     get_or_make_equipment,
     get_or_make_kind,
+    get_time_series,
+    iter_activities,
+    query_activity_meta,
 )
 from ...core.enrichment import update_and_commit
 from ...core.grid import geojson_bounding_box_for_tile_collection
@@ -51,7 +54,8 @@ from ...core.tile_visits import (
 from ...webui.authenticator import Authenticator, needs_authentication
 from ...webui.columns import TIME_SERIES_COLUMNS
 from ..directory_import.importer import get_metadata_from_path
-from ..explorer.clustering import get_cluster_tile_diff_for_activity
+from ..explorer.clustering import get_cluster_tiles_gained_by_activity
+from ..explorer.model import TileStyleName, get_tile_styles
 
 logger = logging.getLogger(__name__)
 
@@ -105,7 +109,6 @@ def metadata_candidates(
 
 
 def make_activity_blueprint(
-    repository: ActivityRepository,
     authenticator: Authenticator,
     config_accessor: ConfigAccessor,
     heart_rate_zone_computer: HeartRateZoneComputer,
@@ -126,9 +129,9 @@ def make_activity_blueprint(
                                     group["latitude"], group["longitude"]
                                 )
                             ]
-                            for _, group in repository.get_time_series(
-                                activity.id
-                            ).groupby("segment_id")
+                            for _, group in get_time_series(activity.id).groupby(
+                                "segment_id"
+                            )
                         ]
                     ),
                     properties={
@@ -137,7 +140,7 @@ def make_activity_blueprint(
                         "activity_id": str(activity.id),
                     },
                 )
-                for i, activity in enumerate(repository.iter_activities())
+                for i, activity in enumerate(iter_activities())
             ]
         )
 
@@ -149,14 +152,15 @@ def make_activity_blueprint(
     @blueprint.route("/<int:id>")
     def show(id: str) -> ResponseReturnValue:
         config = config_accessor.ui()
-        activity = repository.get_activity_by_id(id)
+        tile_styles = get_tile_styles()
+        activity = get_activity_by_id(id)
 
-        time_series = repository.get_time_series(id)
+        time_series = get_time_series(id)
         line_json = make_geojson_from_time_series(
             time_series, config.eighth_marker_min_distance_km
         )
 
-        meta = repository.meta
+        meta = query_activity_meta()
         similar_activities = meta.loc[
             (meta.name == activity.name) & (meta.id != activity.id)
         ]
@@ -172,9 +176,7 @@ def make_activity_blueprint(
                 (tile_visit.tile_x, tile_visit.tile_y)
                 for tile_visit in get_first_visits_for_activity(activity.id, zoom)
             }
-            cluster_gained, _removed = get_cluster_tile_diff_for_activity(
-                zoom, activity.id
-            )
+            cluster_gained = get_cluster_tiles_gained_by_activity(zoom, activity.id)
             new_tiles_per_zoom[zoom] = len(new_tiles)
             affected = new_tiles | cluster_gained
             if affected:
@@ -209,8 +211,13 @@ def make_activity_blueprint(
             "new_tiles": new_tiles_per_zoom,
             "new_tile_stats": new_tile_stats,
             "new_tiles_bbox": new_tiles_bbox,
-            "new_tile_color": config.color_strategy_new_tile_color,
-            "new_cluster_color": config.color_strategy_new_cluster_color,
+            "new_tile_color": tile_styles[TileStyleName.NEW_TILE].border_color,
+            "new_cluster_color": tile_styles[
+                TileStyleName.VISITED_NEW_CLUSTER
+            ].border_color,
+            "new_tile_new_cluster_color": tile_styles[
+                TileStyleName.NEW_TILE_NEW_CLUSTER
+            ].border_color,
             "show_progress_markers": config.show_progress_markers,
         }
 
@@ -283,13 +290,12 @@ def make_activity_blueprint(
 
     @blueprint.route("/name/<name>")
     def name(name: str) -> ResponseReturnValue:
-        meta = repository.meta
+        meta = query_activity_meta()
         selection = meta["name"] == name
         activities_with_name = meta.loc[selection]
 
         time_series = [
-            repository.get_time_series(activity_id)
-            for activity_id in activities_with_name["id"]
+            get_time_series(activity_id) for activity_id in activities_with_name["id"]
         ]
 
         cmap = matplotlib.colormaps["Dark2"]

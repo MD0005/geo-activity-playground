@@ -1,36 +1,37 @@
+import datetime
+import functools
 import itertools
-import json
 import logging
+import threading
+from collections.abc import Iterable
 
 import pandas as pd
 import sqlalchemy as sa
 from tqdm import tqdm
 
 from ...core.datamodel import DB, UiConfig
-from ...core.tile_visits import get_tile_history_df
+from ...core.tile_visits import get_tile_history_df, get_visited_tiles
 from ...core.tiles import adjacent_to
 from .model import (
-    ClusterHistoryCheckpoint,
     ClusterHistoryEvent,
+    ClusterHistoryStatus,
     ClusterMembership,
     ClusterSizeHistory,
+    ClusterTileActivation,
     ExplorerSquare,
+    InaccessibleTile,
     SquareHistory,
 )
 
 logger = logging.getLogger(__name__)
 
+_history_rebuild_lock = threading.Lock()
+
 
 class TileEvolutionState:
+    """Accumulator for the two evolution plot series of one zoom level."""
+
     def __init__(self) -> None:
-        self.num_neighbors: dict[tuple[int, int], int] = {}
-        "Mapping from tile to the number of its neighbors."
-
-        self.memberships: dict[tuple[int, int], tuple[int, int]] = {}
-        "Mapping from tile to the representative tile."
-        self.clusters: dict[tuple[int, int], list[tuple[int, int]]] = {}
-        "Mapping from representative tile to the list of all cluster members."
-
         self.cluster_evolution = pd.DataFrame()
         self.square_start = 0
         self.cluster_start = 0
@@ -49,9 +50,6 @@ class ClusterReplayState:
         self.parents: dict[tuple[int, int], tuple[int, int]] = {}
         self.component_sizes: dict[tuple[int, int], int] = {}
         self.max_cluster_size = 0
-
-
-CLUSTER_CHECKPOINT_INTERVAL = 1_000
 
 
 def _find_root(
@@ -122,73 +120,228 @@ def apply_cluster_history_event(
     return None
 
 
-def _state_to_payload(state: ClusterReplayState) -> str:
-    payload = {
-        "visited_tiles": [list(tile) for tile in sorted(state.visited_tiles)],
-        "neighbor_counts": [
-            [tile[0], tile[1], count]
-            for tile, count in sorted(state.neighbor_counts.items())
-        ],
-        "cluster_tiles": [list(tile) for tile in sorted(state.cluster_tiles)],
-        "parents": [
-            [tile[0], tile[1], parent[0], parent[1]]
-            for tile, parent in sorted(state.parents.items())
-        ],
-        "component_sizes": [
-            [tile[0], tile[1], size]
-            for tile, size in sorted(state.component_sizes.items())
-        ],
-        "max_cluster_size": state.max_cluster_size,
-    }
-    return json.dumps(payload, separators=(",", ":"))
+def compute_current_cluster_state(
+    tiles: Iterable[tuple[int, int]],
+) -> ClusterReplayState:
+    """Cluster state of a tile set, independent of when the tiles were visited.
 
-
-def _state_from_payload(payload_json: str) -> ClusterReplayState:
-    raw = json.loads(payload_json)
+    ``apply_cluster_history_event`` is order-independent, so replaying a set in
+    arbitrary order yields the same clusters as replaying the real history.
+    """
     state = ClusterReplayState()
-    state.visited_tiles = {tuple(tile) for tile in raw.get("visited_tiles", [])}
-    state.neighbor_counts = {
-        (entry[0], entry[1]): entry[2] for entry in raw.get("neighbor_counts", [])
-    }
-    state.cluster_tiles = {tuple(tile) for tile in raw.get("cluster_tiles", [])}
-    state.parents = {
-        (entry[0], entry[1]): (entry[2], entry[3]) for entry in raw.get("parents", [])
-    }
-    state.component_sizes = {
-        (entry[0], entry[1]): entry[2] for entry in raw.get("component_sizes", [])
-    }
-    state.max_cluster_size = raw.get("max_cluster_size", 0)
+    for tile in tiles:
+        apply_cluster_history_event(state, tile)
     return state
 
 
-def compute_tile_evolution(config: UiConfig) -> None:
-    for zoom in config.explorer_zoom_levels:
-        # Get tile history from database
-        tile_history = get_tile_history_df(zoom)
-        rebuild_cluster_history_for_zoom(zoom, tile_history)
-        # Recompute from the full history each time and persist to the database.
-        state = TileEvolutionState()
-        _compute_cluster_evolution(tile_history, state, zoom)
-        _compute_square_history(tile_history, state, zoom)
-        _persist_evolution_to_db(zoom, state)
+def compute_max_square(
+    tiles: Iterable[tuple[int, int]],
+) -> tuple[int | None, int | None, int]:
+    """Largest square of covered tiles, as ``(square_x, square_y, size)``.
+
+    Uses the maximal-square recurrence: ``dp[x, y]`` is the side length of the
+    largest covered square whose maximum corner is ``(x, y)``. Sorting by
+    ``(x, y)`` guarantees that the three predecessors are known already.
+    """
+    dp: dict[tuple[int, int], int] = {}
+    best_size = 0
+    best_x: int | None = None
+    best_y: int | None = None
+    for x, y in sorted(tiles):
+        size = 1 + min(
+            dp.get((x - 1, y), 0),
+            dp.get((x, y - 1), 0),
+            dp.get((x - 1, y - 1), 0),
+        )
+        dp[(x, y)] = size
+        if size > best_size:
+            best_size = size
+            best_x = x - size + 1
+            best_y = y - size + 1
+    return best_x, best_y, best_size
+
+
+def get_counted_inaccessible_tiles(zoom: int) -> set[tuple[int, int]]:
+    """Inaccessible tiles that count toward the cluster and square, if enabled.
+
+    They never count as visited tiles, so the explored tile counts stay honest;
+    they only fill the holes that cluster and square geometry care about.
+    """
+    from ...core.config import ConfigAccessor
+
+    if not ConfigAccessor().ui().count_inaccessible_in_cluster:
+        return set()
+    return {
+        (row.tile_x, row.tile_y)
+        for row in DB.session.execute(
+            sa.select(InaccessibleTile.tile_x, InaccessibleTile.tile_y).where(
+                InaccessibleTile.zoom == zoom
+            )
+        )
+    }
+
+
+def get_covered_tiles(zoom: int) -> set[tuple[int, int]]:
+    """Tiles that count for cluster and square purposes at a zoom level."""
+    return get_visited_tiles(zoom) | get_counted_inaccessible_tiles(zoom)
+
+
+def compute_current_state_for_zoom(
+    zoom: int, tiles: Iterable[tuple[int, int]] | None = None
+) -> None:
+    """Persist cluster membership and the biggest square for a zoom level.
+
+    This is a pure function of the covered tile set and needs neither the tile
+    history nor a replay, so it is cheap enough to run after every change.
+    """
+    covered = set(get_covered_tiles(zoom) if tiles is None else tiles)
+    state = compute_current_cluster_state(covered)
+    square_x, square_y, max_square_size = compute_max_square(covered)
+
+    DB.session.query(ClusterMembership).filter(ClusterMembership.zoom == zoom).delete()
+    _materialize_cluster_membership(zoom, state)
+
+    DB.session.query(ExplorerSquare).filter(ExplorerSquare.zoom == zoom).delete()
+    DB.session.add(
+        ExplorerSquare(
+            zoom=zoom,
+            square_x=square_x,
+            square_y=square_y,
+            max_square_size=max_square_size,
+        )
+    )
+    DB.session.commit()
+
+
+def mark_cluster_history_stale(zooms: Iterable[int]) -> None:
+    """Flag the stored history of these zoom levels as outdated."""
+    for zoom in zooms:
+        status = DB.session.get(ClusterHistoryStatus, zoom)
+        if status is None:
+            DB.session.add(ClusterHistoryStatus(zoom=zoom, stale=True))
+        else:
+            status.stale = True
+    DB.session.commit()
+
+
+def is_cluster_history_stale(zoom: int) -> bool:
+    status = DB.session.get(ClusterHistoryStatus, zoom)
+    return status is None or status.stale
+
+
+def rebuild_cluster_history(zoom: int) -> None:
+    """Replay the history of a zoom level and store everything derived from it.
+
+    This is the expensive path: it walks every tile visit in order. Everything
+    that only depends on the current tile set lives in
+    ``compute_current_state_for_zoom`` and does not come through here.
+    """
+    tile_history = get_tile_history_df(zoom)
+    rebuild_cluster_history_for_zoom(zoom, tile_history)
+
+    state = TileEvolutionState()
+    _compute_cluster_evolution(tile_history, state, zoom)
+    _compute_square_history(tile_history, state, zoom)
+    _persist_evolution_to_db(zoom, state)
+
+    status = DB.session.get(ClusterHistoryStatus, zoom)
+    if status is None:
+        status = ClusterHistoryStatus(zoom=zoom)
+        DB.session.add(status)
+    status.stale = False
+    status.computed_at = datetime.datetime.now()
+    DB.session.commit()
+
+
+CLUSTER_HISTORY_CLAIM_TIMEOUT = datetime.timedelta(minutes=30)
+
+
+def _claim_cluster_history_rebuild(zoom: int) -> bool:
+    """Try to become the one who rebuilds this zoom level.
+
+    The Explorer page requests its plots in parallel and the server runs several
+    worker processes, so without a claim two of them would delete and re-insert
+    the same history rows and collide. A single conditional ``UPDATE`` is atomic
+    in the database and therefore works across processes, unlike a lock held in
+    one of them. A claim that was never released, because the worker died, is
+    taken over after a timeout.
+    """
+    now = datetime.datetime.now()
+    result = DB.session.execute(
+        sa.update(ClusterHistoryStatus)
+        .where(
+            ClusterHistoryStatus.zoom == zoom,
+            ClusterHistoryStatus.stale,
+            sa.or_(
+                ClusterHistoryStatus.rebuilding_since.is_(None),
+                ClusterHistoryStatus.rebuilding_since
+                < now - CLUSTER_HISTORY_CLAIM_TIMEOUT,
+            ),
+        )
+        .values(rebuilding_since=now)
+    )
+    DB.session.commit()
+    return bool(result.rowcount)
+
+
+def rebuild_cluster_history_if_stale(zoom: int) -> bool:
+    """Rebuild the history of a zoom level if needed. Returns whether it ran."""
+    # The lock only keeps the threads of this worker from piling up on the
+    # claim; the claim itself is what coordinates the worker processes.
+    with _history_rebuild_lock:
+        if not is_cluster_history_stale(zoom):
+            return False
+        if DB.session.get(ClusterHistoryStatus, zoom) is None:
+            DB.session.add(ClusterHistoryStatus(zoom=zoom, stale=True))
+            DB.session.commit()
+        if not _claim_cluster_history_rebuild(zoom):
+            logger.info(
+                f"Another worker is rebuilding the cluster history for {zoom=}."
+            )
+            return False
+        logger.info(f"Rebuilding outdated cluster history for {zoom=}.")
+        try:
+            rebuild_cluster_history(zoom)
+        finally:
+            status = DB.session.get(ClusterHistoryStatus, zoom)
+            if status is not None:
+                status.rebuilding_since = None
+                DB.session.commit()
+        return True
+
+
+def compute_tile_evolution(config: UiConfig, zooms: list[int] | None = None) -> None:
+    for zoom in config.explorer_zoom_levels if zooms is None else zooms:
+        compute_current_state_for_zoom(zoom)
+        rebuild_cluster_history(zoom)
+
+
+def delete_tile_evolution(zoom: int) -> None:
+    """Drop all derived cluster and square data of a zoom level."""
+    for model in (
+        ClusterHistoryEvent,
+        ClusterHistoryStatus,
+        ClusterMembership,
+        ClusterSizeHistory,
+        ClusterTileActivation,
+        ExplorerSquare,
+        SquareHistory,
+    ):
+        DB.session.query(model).filter(model.zoom == zoom).delete()
+    _cluster_state_at_cutoff.cache_clear()
+    DB.session.commit()
 
 
 def _persist_evolution_to_db(zoom: int, state: "TileEvolutionState") -> None:
-    """Write the square state and evolution plot series of a zoom to the database."""
-    DB.session.query(ExplorerSquare).filter(ExplorerSquare.zoom == zoom).delete()
+    """Write the evolution plot series of a zoom to the database.
+
+    The current square lives in ``ExplorerSquare`` and is written by
+    ``compute_current_state_for_zoom`` instead, which does not need the history.
+    """
     DB.session.query(SquareHistory).filter(SquareHistory.zoom == zoom).delete()
     DB.session.query(ClusterSizeHistory).filter(
         ClusterSizeHistory.zoom == zoom
     ).delete()
-
-    DB.session.add(
-        ExplorerSquare(
-            zoom=zoom,
-            square_x=state.square_x,
-            square_y=state.square_y,
-            max_square_size=state.max_square_size,
-        )
-    )
 
     for row in state.square_evolution.itertuples(index=False):
         DB.session.add(
@@ -258,75 +411,89 @@ def get_cluster_size_history_df(zoom: int) -> pd.DataFrame:
     )
 
 
+def _seeded_replay_state(zoom: int) -> ClusterReplayState:
+    """A replay state that already contains the counted inaccessible tiles."""
+    state = ClusterReplayState()
+    for tile in get_counted_inaccessible_tiles(zoom):
+        apply_cluster_history_event(state, tile)
+    return state
+
+
 def rebuild_cluster_history_for_zoom(zoom: int, tile_history: pd.DataFrame) -> None:
+    """Replay the tile history once, storing the events and the activations."""
     DB.session.query(ClusterHistoryEvent).filter(
         ClusterHistoryEvent.zoom == zoom
     ).delete()
-    DB.session.query(ClusterHistoryCheckpoint).filter(
-        ClusterHistoryCheckpoint.zoom == zoom
+    DB.session.query(ClusterTileActivation).filter(
+        ClusterTileActivation.zoom == zoom
     ).delete()
-    DB.session.query(ClusterMembership).filter(ClusterMembership.zoom == zoom).delete()
+    _cluster_state_at_cutoff.cache_clear()
 
-    state = ClusterReplayState()
+    # Inaccessible tiles are counted at the origin of time: they were never
+    # reachable, so treating them as present from the start keeps the history
+    # consistent with the current state.
+    state = _seeded_replay_state(zoom)
     event_batch: list[ClusterHistoryEvent] = []
-    checkpoint_batch: list[ClusterHistoryCheckpoint] = []
+    # Event index zero marks what already clustered before the first ride.
+    activation_batch: list[ClusterTileActivation] = [
+        ClusterTileActivation(
+            zoom=zoom,
+            tile_x=tile[0],
+            tile_y=tile[1],
+            event_index=0,
+            activity_id=None,
+            time=None,
+        )
+        for tile in state.cluster_tiles
+    ]
 
     for event_index, row in enumerate(tile_history.itertuples(index=False), start=1):
         tile = (int(row.tile_x), int(row.tile_y))
+        time = row.time.to_pydatetime() if pd.notna(row.time) else None
         event_batch.append(
             ClusterHistoryEvent(
                 zoom=zoom,
                 event_index=event_index,
                 activity_id=int(row.activity_id),
-                time=(row.time.to_pydatetime() if pd.notna(row.time) else None),
+                time=time,
                 tile_x=tile[0],
                 tile_y=tile[1],
             )
         )
 
+        # Only this tile and its neighbors can reach four neighbors from this
+        # event, so those are the only activation candidates.
+        candidates = [tile, *adjacent_to(tile)]
+        active_before = {other for other in candidates if other in state.cluster_tiles}
         apply_cluster_history_event(state, tile)
-
-        if event_index % CLUSTER_CHECKPOINT_INTERVAL == 0:
-            checkpoint_batch.append(
-                ClusterHistoryCheckpoint(
+        for other in candidates:
+            if other in active_before or other not in state.cluster_tiles:
+                continue
+            activation_batch.append(
+                ClusterTileActivation(
                     zoom=zoom,
+                    tile_x=other[0],
+                    tile_y=other[1],
                     event_index=event_index,
-                    time=(row.time.to_pydatetime() if pd.notna(row.time) else None),
-                    max_cluster_size=state.max_cluster_size,
-                    payload_json=_state_to_payload(state),
+                    activity_id=int(row.activity_id),
+                    time=time,
                 )
             )
 
         if len(event_batch) >= 1_000:
             DB.session.add_all(event_batch)
             event_batch = []
-        if len(checkpoint_batch) >= 50:
-            DB.session.add_all(checkpoint_batch)
-            checkpoint_batch = []
+        if len(activation_batch) >= 1_000:
+            DB.session.add_all(activation_batch)
+            activation_batch = []
 
-    if event_batch:
-        DB.session.add_all(event_batch)
-    if len(tile_history) > 0 and len(tile_history) % CLUSTER_CHECKPOINT_INTERVAL != 0:
-        last = tile_history.iloc[-1]
-        checkpoint_batch.append(
-            ClusterHistoryCheckpoint(
-                zoom=zoom,
-                event_index=len(tile_history),
-                time=(last["time"].to_pydatetime() if pd.notna(last["time"]) else None),
-                max_cluster_size=state.max_cluster_size,
-                payload_json=_state_to_payload(state),
-            )
-        )
-    if checkpoint_batch:
-        DB.session.add_all(checkpoint_batch)
-
-    _materialize_cluster_membership(zoom, state)
-
+    DB.session.add_all(event_batch)
+    DB.session.add_all(activation_batch)
     DB.session.commit()
 
 
 def _materialize_cluster_membership(zoom: int, state: ClusterReplayState) -> None:
-    """Persist the final cluster membership of a replay state for a zoom level."""
+    """Persist the cluster membership of a state for a zoom level."""
     batch: list[ClusterMembership] = []
     for tile in state.cluster_tiles:
         root = _find_root(state.parents, tile)
@@ -462,34 +629,31 @@ def get_cluster_history_latest_event_index(zoom: int) -> int:
 
 
 def get_cluster_tiles_at_cutoff(zoom: int, event_index: int) -> set[tuple[int, int]]:
-    return set(get_cluster_state_at_cutoff(zoom, event_index).cluster_tiles)
+    """Cluster tiles as of an event index, straight from the activation table.
 
-
-def get_cluster_state_at_cutoff(zoom: int, event_index: int) -> ClusterReplayState:
-    if event_index <= 0:
-        return ClusterReplayState()
-
-    checkpoint = DB.session.scalar(
-        sa.select(ClusterHistoryCheckpoint)
-        .where(
-            ClusterHistoryCheckpoint.zoom == zoom,
-            ClusterHistoryCheckpoint.event_index <= event_index,
+    Index zero is the state before the first ride, which is not necessarily
+    empty: inaccessible tiles counted toward the cluster are seeded there.
+    """
+    if event_index < 0:
+        return set()
+    return {
+        (row.tile_x, row.tile_y)
+        for row in DB.session.execute(
+            sa.select(ClusterTileActivation.tile_x, ClusterTileActivation.tile_y).where(
+                ClusterTileActivation.zoom == zoom,
+                ClusterTileActivation.event_index <= event_index,
+            )
         )
-        .order_by(ClusterHistoryCheckpoint.event_index.desc())
-        .limit(1)
-    )
-    if checkpoint is None:
-        state = ClusterReplayState()
-        start_event_index = 0
-    else:
-        state = _state_from_payload(checkpoint.payload_json)
-        start_event_index = checkpoint.event_index
+    }
 
-    events = DB.session.scalars(
-        sa.select(ClusterHistoryEvent)
+
+@functools.lru_cache(maxsize=2)
+def _cluster_state_at_cutoff(zoom: int, event_index: int) -> ClusterReplayState:
+    state = _seeded_replay_state(zoom)
+    events = DB.session.execute(
+        sa.select(ClusterHistoryEvent.tile_x, ClusterHistoryEvent.tile_y)
         .where(
             ClusterHistoryEvent.zoom == zoom,
-            ClusterHistoryEvent.event_index > start_event_index,
             ClusterHistoryEvent.event_index <= event_index,
         )
         .order_by(ClusterHistoryEvent.event_index)
@@ -499,136 +663,76 @@ def get_cluster_state_at_cutoff(zoom: int, event_index: int) -> ClusterReplaySta
     return state
 
 
-def get_cluster_tile_diff_for_activity(
+def get_cluster_state_at_cutoff(zoom: int, event_index: int) -> ClusterReplayState:
+    """Full cluster state at an event index, including the cluster identities.
+
+    Only the time slider needs the identities, and it holds one cutoff still
+    while the map requests many tile images, so a small cache turns the replay
+    into a once-per-slider-position cost.
+    """
+    if event_index < 0:
+        return ClusterReplayState()
+    return _cluster_state_at_cutoff(zoom, event_index)
+
+
+def get_cluster_tiles_gained_by_activity(
     zoom: int, activity_id: int
-) -> tuple[set[tuple[int, int]], set[tuple[int, int]]]:
-    first_event, last_event = get_cluster_history_cutoff_for_activity(zoom, activity_id)
-    if first_event is None or last_event is None:
-        return set(), set()
-    before = get_cluster_tiles_at_cutoff(zoom, first_event - 1)
-    after = get_cluster_tiles_at_cutoff(zoom, last_event)
-    return after - before, before - after
+) -> set[tuple[int, int]]:
+    """Tiles that became cluster tiles through the given activity.
+
+    Cluster membership only grows, so an activity can never take tiles away.
+    """
+    return {
+        (row.tile_x, row.tile_y)
+        for row in DB.session.execute(
+            sa.select(ClusterTileActivation.tile_x, ClusterTileActivation.tile_y).where(
+                ClusterTileActivation.zoom == zoom,
+                ClusterTileActivation.activity_id == activity_id,
+            )
+        )
+    }
 
 
 def get_cluster_tile_activations_df(zoom: int) -> pd.DataFrame:
-    events = DB.session.scalars(
-        sa.select(ClusterHistoryEvent)
-        .where(ClusterHistoryEvent.zoom == zoom)
-        .order_by(ClusterHistoryEvent.event_index)
-    ).all()
-    if not events:
-        return pd.DataFrame(
-            columns=["time", "event_index", "activity_id", "tile_x", "tile_y"]
+    rows = DB.session.execute(
+        sa.select(
+            ClusterTileActivation.time,
+            ClusterTileActivation.event_index,
+            ClusterTileActivation.activity_id,
+            ClusterTileActivation.tile_x,
+            ClusterTileActivation.tile_y,
         )
-
-    state = ClusterReplayState()
-    rows: list[dict[str, object]] = []
-    for event in events:
-        event_tile = (event.tile_x, event.tile_y)
-        candidates = [event_tile, *adjacent_to(event_tile)]
-        active_before = {tile for tile in candidates if tile in state.cluster_tiles}
-        apply_cluster_history_event(state, event_tile)
-        for tile in candidates:
-            if tile in active_before or tile not in state.cluster_tiles:
-                continue
-            rows.append(
-                {
-                    "time": pd.Timestamp(event.time)
-                    if event.time is not None
-                    else pd.NaT,
-                    "event_index": event.event_index,
-                    "activity_id": event.activity_id,
-                    "tile_x": tile[0],
-                    "tile_y": tile[1],
-                }
-            )
-    return pd.DataFrame(rows)
+        .where(ClusterTileActivation.zoom == zoom)
+        .order_by(ClusterTileActivation.event_index)
+    ).all()
+    return pd.DataFrame(
+        {
+            "time": [pd.Timestamp(row.time) if row.time else pd.NaT for row in rows],
+            "event_index": [row.event_index for row in rows],
+            "activity_id": [row.activity_id for row in rows],
+            "tile_x": [row.tile_x for row in rows],
+            "tile_y": [row.tile_y for row in rows],
+        },
+        columns=["time", "event_index", "activity_id", "tile_x", "tile_y"],
+    )
 
 
 def _compute_cluster_evolution(
     tiles: pd.DataFrame, s: TileEvolutionState, zoom: int
 ) -> None:
-    if len(s.cluster_evolution) > 0:
-        max_cluster_so_far = s.cluster_evolution["max_cluster_size"].iloc[-1]
-    else:
-        max_cluster_so_far = 0
-
+    """Series of the biggest cluster size over time, via the union-find replay."""
+    state = ClusterReplayState()
     rows = []
-    for _index, row in tqdm(
-        tiles.iterrows(),
+    for row in tqdm(
+        tiles.itertuples(index=False),
         desc=f"Cluster evolution for {zoom=}",
         delay=1,
     ):
-        new_clusters = False
-        # Current tile.
-        tile = (row["tile_x"], row["tile_y"])
+        max_cluster_size = apply_cluster_history_event(state, (row.tile_x, row.tile_y))
+        if max_cluster_size is not None:
+            rows.append({"time": row.time, "max_cluster_size": max_cluster_size})
 
-        if tile in s.num_neighbors:
-            continue
-
-        # This tile is new, therefore it doesn't have an entries in the neighbor list yet.
-        s.num_neighbors[tile] = 0
-
-        # Go through the adjacent tile and check whether there are neighbors.
-        for other in adjacent_to(tile):
-            if other in s.num_neighbors:
-                # The other tile is already visited. That means that the current tile has a neighbor.
-                s.num_neighbors[tile] += 1
-                # Alto the other tile has gained a neighbor.
-                s.num_neighbors[other] += 1
-
-        # If the current tile has all neighbors, make it it's own cluster.
-        if s.num_neighbors[tile] == 4:
-            s.clusters[tile] = [tile]
-            s.memberships[tile] = tile
-
-        # Also make the adjacent tiles their own clusters, if they are full.
-        this_and_neighbors = [tile] + list(adjacent_to(tile))
-        for other in this_and_neighbors:
-            if s.num_neighbors.get(other, 0) == 4:
-                s.clusters[other] = [other]
-                s.memberships[other] = other
-
-        for candidate in this_and_neighbors:
-            # If the the candidate is not a cluster tile, skip.
-            if candidate not in s.memberships:
-                continue
-            # The candidate is a cluster tile. Let's see whether any of the neighbors are also cluster tiles but with a different cluster. Then we need to join them.
-            for other in adjacent_to(candidate):
-                if other not in s.memberships:
-                    continue
-                # The other tile is also a cluster tile.
-                if s.memberships[candidate] == s.memberships[other]:
-                    continue
-                # The two clusters are not the same. We add the other's cluster tile to this tile.
-                this_cluster = s.clusters[s.memberships[candidate]]
-                assert isinstance(other, tuple), other
-                assert isinstance(s.memberships[other], tuple), s.memberships[other]
-                other_cluster = s.clusters[s.memberships[other]]
-                other_cluster_name = s.memberships[other]
-                this_cluster.extend(other_cluster)
-                # Update the other cluster tiles that they now point to the new cluster. This also updates the other tile.
-                for member in other_cluster:
-                    s.memberships[member] = s.memberships[candidate]
-                del s.clusters[other_cluster_name]
-                new_clusters = True
-
-        if new_clusters:
-            max_cluster_size = max(
-                (len(members) for members in s.clusters.values()),
-                default=0,
-            )
-            if max_cluster_size > max_cluster_so_far:
-                rows.append(
-                    {
-                        "time": row["time"],
-                        "max_cluster_size": max_cluster_size,
-                    }
-                )
-                max_cluster_so_far = max_cluster_size
-
-    new_cluster_evolution = pd.DataFrame(rows)
-    s.cluster_evolution = pd.concat([s.cluster_evolution, new_cluster_evolution])
+    s.cluster_evolution = pd.DataFrame(rows)
     s.cluster_start = len(tiles)
 
 

@@ -12,7 +12,7 @@
     <div class="col-md-12">
         <div id="activity-lines-map" style="height: 500px;"></div>
         <script type="module">
-            import { add_layers_to_map } from '/static/map-layers.js';
+            import { add_layers_to_map } from '/static/dist/map-layers.js';
 
             function onEachFeature(feature, layer) {
                 layer.bindPopup(`<a href=/activity/${feature.properties.activity_id}>${feature.properties.activity_name}</a>`)

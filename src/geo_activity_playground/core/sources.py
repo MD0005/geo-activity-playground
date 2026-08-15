@@ -1,7 +1,6 @@
 import abc
 import pathlib
 
-from .activities import ActivityRepository
 from .config import ConfigAccessor
 
 
@@ -23,7 +22,6 @@ class ActivitySource(abc.ABC):
     def import_activities(
         self,
         config_accessor: ConfigAccessor,
-        repository: ActivityRepository,
         begin: str | None = None,  # noqa: ARG002
         end: str | None = None,  # noqa: ARG002
     ) -> None:
@@ -42,15 +40,12 @@ class DirectoryImportSource(ActivitySource):
     def import_activities(
         self,
         config_accessor: ConfigAccessor,
-        repository: ActivityRepository,
         begin: str | None = None,  # noqa: ARG002
         end: str | None = None,  # noqa: ARG002
     ) -> None:
         from ..features.directory_import.importer import import_from_directory
 
         import_from_directory(
-            repository,
             config_accessor.activity_import(),
-            config_accessor.ui(),
             source=self.source,
         )

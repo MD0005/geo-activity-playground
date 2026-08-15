@@ -11,7 +11,7 @@
 
 <div id="activity-trim-map" style="height: 600px;" class="mb-3"></div>
 <script type="module">
-    import { initActivityTrimMap } from '/static/activity-trim.js';
+    import { initActivityTrimMap } from '/static/dist/activity-trim.js';
     initActivityTrimMap({
         attribution: '{{ map_tile_attribution|safe }}',
         geojson: {{ color_line_geojson | safe }}

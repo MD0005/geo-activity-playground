@@ -165,6 +165,25 @@ def get_stored_queries(limit_recent: int = 10) -> list[StoredSearchQuery]:
 
 def apply_search_filter(primitives: dict) -> pd.DataFrame:
     """Apply filter from primitives dict and return matching activities."""
+    return query_activity_meta(_filter_clauses(primitives))
+
+
+def activity_ids_for_search(primitives: dict) -> set[int] | None:
+    """Ids of the activities matching the primitives, or ``None`` for all.
+
+    Returning ``None`` for an empty filter lets callers skip the ``IN`` clause
+    entirely rather than passing every id in the database.
+    """
+    if not primitives:
+        return None
+    return set(
+        DB.session.scalars(
+            sqlalchemy.select(Activity.id).where(*_filter_clauses(primitives))
+        ).all()
+    )
+
+
+def _filter_clauses(primitives: dict) -> list:
     filter_clauses = []
 
     if primitives.get("equipment"):
@@ -212,7 +231,7 @@ def apply_search_filter(primitives: dict) -> pd.DataFrame:
     if primitives.get("distance_km_max") is not None:
         filter_clauses.append(Activity.distance_km <= primitives["distance_km_max"])
 
-    return query_activity_meta(filter_clauses)
+    return filter_clauses
 
 
 def _optional_float(s: str | None) -> float | None:

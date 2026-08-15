@@ -1,6 +1,5 @@
 import pathlib
 
-from ...core.activities import ActivityRepository
 from ...core.config import ConfigAccessor
 from ...core.sources import ActivitySource
 from .api_importer import import_from_strava_api
@@ -18,7 +17,6 @@ class StravaCheckoutActivitySource(ActivitySource):
     def import_activities(
         self,
         config_accessor: ConfigAccessor,
-        repository: ActivityRepository,  # noqa: ARG002
         begin: str | None = None,  # noqa: ARG002
         end: str | None = None,  # noqa: ARG002
     ) -> None:
@@ -39,13 +37,11 @@ class StravaApiActivitySource(ActivitySource):
     def import_activities(
         self,
         config_accessor: ConfigAccessor,
-        repository: ActivityRepository,
         begin: str | None = None,
         end: str | None = None,
     ) -> None:
         import_from_strava_api(
             config_accessor,
-            repository,
             begin,
             end,
             source=self.source,
@@ -69,10 +65,9 @@ class StravaActivitySource(ActivitySource):
     def import_activities(
         self,
         config_accessor: ConfigAccessor,
-        repository: ActivityRepository,
         begin: str | None = None,
         end: str | None = None,
     ) -> None:
         for source in self._sources:
             if source.is_enabled(config_accessor):
-                source.import_activities(config_accessor, repository, begin, end)
+                source.import_activities(config_accessor, begin, end)
