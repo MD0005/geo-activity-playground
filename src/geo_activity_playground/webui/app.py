@@ -94,6 +94,7 @@ from .blueprints.search_blueprint import make_search_blueprint
 from .blueprints.settings_blueprint import make_settings_blueprint
 from .flasher import FlaskFlasher
 from .i18n import DEFAULT_LANGUAGE, SUPPORTED_LANGUAGE_CODES
+from .static_assets import assert_frontend_assets_present
 
 logger = logging.getLogger(__name__)
 
@@ -227,6 +228,8 @@ def create_app(
     Returns:
         Configured Flask application.
     """
+    assert_frontend_assets_present()
+
     app = Flask(__name__)
 
     # Honor X-Forwarded-* headers set by a reverse proxy so that generated

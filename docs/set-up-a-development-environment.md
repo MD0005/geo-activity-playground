@@ -62,6 +62,8 @@ detect that a resync is needed on its own; force one with:
 uv sync --reinstall-package geo-activity-playground
 ```
 
+The bundle is mandatory: the server refuses to start when `src/geo_activity_playground/webui/static/dist` doesn't hold the built assets, rather than serving unstyled pages. If you hit that error, install npm and run the resync command above. Starting the program with `python -m geo_activity_playground` bypasses `uv` and therefore never triggers a build; use `uv run geo-activity-playground` instead.
+
 ## Set up the pre-commit hook
 
 This project also uses [pre-commit](https://pre-commit.com/) to make sure that every commit is run through some formatters and checkers. If you only want to use the development version but not contribute, you can skip this section.

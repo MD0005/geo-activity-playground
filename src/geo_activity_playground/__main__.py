@@ -15,6 +15,7 @@ from .features.explorer_video.cli import (
 from .features.heatmap_video.cli import register_main_heatmap_video
 from .features.strava.checkout_importer import convert_strava_checkout
 from .webui.app import create_app, web_ui_main
+from .webui.static_assets import MissingFrontendAssetsError
 
 logger = logging.getLogger(__name__)
 
@@ -254,7 +255,11 @@ def main() -> None:
 
     logging.getLogger("stravalib.protocol.ApiV3").setLevel(logging.WARNING)
 
-    options.func(options)
+    try:
+        options.func(options)
+    except MissingFrontendAssetsError as e:
+        logger.error(str(e))
+        sys.exit(1)
 
 
 if __name__ == "__main__":
