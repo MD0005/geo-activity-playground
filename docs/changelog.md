@@ -17,6 +17,9 @@ Types of changes
 
 ## Unreleased
 
+Changed:
+
+- The webserver now refuses to start when the bundled JavaScript and CSS assets are missing, instead of serving unstyled pages. The error message explains that npm is needed to build them. ([GH-491](https://github.com/martin-ueding/geo-activity-playground/issues/491))
 
 ## Version 1.48.0 — 2026-08-14
 
