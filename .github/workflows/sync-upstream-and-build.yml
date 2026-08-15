@@ -2,9 +2,6 @@ name: Sync upstream and build image
 
 on:
   workflow_dispatch:
-  push:
-    paths:
-      - ".github/workflows/sync-upstream-and-build.yml"
   schedule:
     - cron: "30 2 * * *" # codziennie 02:30 UTC, czyli 04:30 w Polsce latem
 
