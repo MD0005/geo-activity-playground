@@ -3,6 +3,8 @@ name: Build and Push to GHCR
 on:
   push:
     branches: [ "main" ]
+    paths-ignore:
+      - ".github/workflows/sync-upstream-and-build.yml"
   workflow_dispatch:
 
 permissions:
