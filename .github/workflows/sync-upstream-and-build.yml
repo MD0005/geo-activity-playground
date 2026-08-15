@@ -15,7 +15,7 @@ jobs:
 
     steps:
       - name: Checkout fork
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: main
           fetch-depth: 0
@@ -31,7 +31,40 @@ jobs:
 
           BEFORE=$(git rev-parse HEAD)
 
-          git merge --no-edit upstream/main
+          if ! git merge --no-edit upstream/main; then
+            mapfile -t CONFLICTS < <(git diff --name-only --diff-filter=U)
+
+            if [ "${#CONFLICTS[@]}" -ne 1 ]; then
+              echo "::error::Upstream merge has conflicts that require manual review."
+              git status --short
+              git merge --abort
+              exit 1
+            fi
+
+            case "${CONFLICTS[0]}" in
+              .github/workflows/build-and-push.yml)
+                # Git detected the fork's ARM64 workflow as a rename of the
+                # upstream release workflow. Preserve both under separate names.
+                git show :2:.github/workflows/build-and-push.yml > .github/workflows/build-and-push.yml
+                git show :3:.github/workflows/build-and-push.yml > .github/workflows/ghcr_build.yml
+                git add .github/workflows/build-and-push.yml .github/workflows/ghcr_build.yml
+                ;;
+              .github/workflows/ghcr_build.yml)
+                # Git treated the same history as an upstream modification of a
+                # file deleted by the fork. Keep upstream's release workflow;
+                # the fork's ARM64 workflow already has its independent path.
+                git add .github/workflows/ghcr_build.yml
+                ;;
+              *)
+                echo "::error::Unexpected conflict in ${CONFLICTS[0]}."
+                git status --short
+                git merge --abort
+                exit 1
+                ;;
+            esac
+
+            git commit --no-edit
+          fi
 
           AFTER=$(git rev-parse HEAD)
 
@@ -41,6 +74,19 @@ jobs:
           else
             echo "changed=false" >> "$GITHUB_OUTPUT"
           fi
+
+      - name: Read package version
+        id: package
+        if: steps.sync.outputs.changed == 'true' || github.event_name == 'workflow_dispatch'
+        run: |
+          VERSION=$(sed -nE 's/^version = "([^"]+)"/\1/p' pyproject.toml | head -n 1)
+
+          if [ -z "$VERSION" ]; then
+            echo "::error::Could not read the project version from pyproject.toml."
+            exit 1
+          fi
+
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Set up Docker Buildx
         if: steps.sync.outputs.changed == 'true' || github.event_name == 'workflow_dispatch'
@@ -60,5 +106,8 @@ jobs:
         with:
           context: .
           push: true
+          build-args: |
+            VERSION=${{ steps.package.outputs.version }}
           tags: ghcr.io/md0005/geo-activity-playground:latest
           platforms: linux/arm64
+
