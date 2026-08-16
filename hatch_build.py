@@ -6,6 +6,7 @@ development, `uv build` for a release) produces them fresh from the pinned
 dependency versions in `uv.lock` and `package-lock.json`.
 """
 
+import importlib.util
 import shutil
 import subprocess
 from pathlib import Path
@@ -15,6 +16,23 @@ from hatchling.builders.hooks.plugin.interface import BuildHookInterface
 REPO_ROOT = Path(__file__).parent
 TRANSLATIONS_DIR = REPO_ROOT / "src/geo_activity_playground/webui/translations"
 STATIC_DIST_DIR = REPO_ROOT / "src/geo_activity_playground/webui/static/dist"
+
+
+def _load_static_assets_module():
+    """Load the runtime's asset list without importing the package itself.
+
+    The package cannot be imported at build time (its dependencies aren't
+    installed yet), but the list of assets the webui needs must not drift
+    between what the build produces and what startup demands.
+    """
+    path = REPO_ROOT / "src/geo_activity_playground/webui/static_assets.py"
+    spec = importlib.util.spec_from_file_location("gap_static_assets", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+REQUIRED_ASSETS = _load_static_assets_module().REQUIRED_ASSETS
 
 
 class WebuiAssetsBuildHook(BuildHookInterface):
@@ -60,3 +78,13 @@ class WebuiAssetsBuildHook(BuildHookInterface):
 
         subprocess.run([npm, "ci"], cwd=REPO_ROOT, check=True)
         subprocess.run([npm, "run", "webui:build"], cwd=REPO_ROOT, check=True)
+
+        missing = [
+            name for name in REQUIRED_ASSETS if not (STATIC_DIST_DIR / name).is_file()
+        ]
+        if missing:
+            raise RuntimeError(
+                f"The webui build did not produce {', '.join(missing)} in "
+                f"{STATIC_DIST_DIR}. Check the Vite entry points in "
+                "vite.config.js against the assets the templates reference."
+            )
