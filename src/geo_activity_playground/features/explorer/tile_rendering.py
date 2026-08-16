@@ -32,7 +32,6 @@ from .model import BorderStroke, TileStyle, TileStyleName, get_tile_styles
 
 SQUARE_LINE_WIDTH = 3
 SQUARE_COLOR = np.array([228, 26, 28, 255], dtype=np.float32) / 256.0
-ACTIVITY_LINE_COLOR = np.array([228, 26, 28, 255], dtype=np.float32) / 255.0
 GRID_COLOR = np.array([0.5, 0.5, 0.5, 0.5], dtype=np.float32)
 
 STRIPES_PER_TILE = 8
@@ -711,7 +710,7 @@ def render_inaccessible_tile_image(
 
 
 def render_activity_line_tile_image(
-    time_series: pd.DataFrame, z: int, x: int, y: int
+    time_series: pd.DataFrame, z: int, x: int, y: int, line_color: str
 ) -> np.ndarray:
     """Draw the track of one activity into a raster tile."""
     mask = Image.new("L", (OSM_TILE_SIZE, OSM_TILE_SIZE))
@@ -730,7 +729,7 @@ def render_activity_line_tile_image(
             joint="curve",
         )
     result = np.zeros((OSM_TILE_SIZE, OSM_TILE_SIZE, 4), dtype=np.float32)
-    result[:, :, :3] = ACTIVITY_LINE_COLOR[:3]
+    result[:, :, :3] = hex_color_to_float(line_color + "ff").reshape(4)[:3]
     result[:, :, 3] = np.array(mask, dtype=np.float32) / 255.0
     return result
 

@@ -766,6 +766,9 @@ def make_settings_blueprint(
             config_accessor.ui().color_strategy_cmap_opacity = float(
                 request.form["cmap_opacity"]
             )
+            config_accessor.ui().activity_line_color = request.form[
+                "activity_line_color"
+            ]
             config_accessor.save()
             flash(_("Updated tile rendering."), category="success")
 
@@ -805,6 +808,7 @@ def make_settings_blueprint(
                 (BorderStroke.DASHED, _("Dashed")),
             ],
             cmap_opacity=config_accessor.ui().color_strategy_cmap_opacity,
+            activity_line_color=config_accessor.ui().activity_line_color,
         )
 
     @blueprint.route("/manage-kinds")

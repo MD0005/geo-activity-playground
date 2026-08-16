@@ -219,6 +219,7 @@ def make_activity_blueprint(
                 TileStyleName.NEW_TILE_NEW_CLUSTER
             ].border_color,
             "show_progress_markers": config.show_progress_markers,
+            "activity_line_color": config.activity_line_color,
         }
 
         display_time_series = time_series.copy()
