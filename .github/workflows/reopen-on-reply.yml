@@ -11,6 +11,7 @@ jobs:
       github.event.issue.pull_request == null
       && github.event.issue.state == 'closed'
       && github.actor != 'martin-ueding'
+      && github.actor != github.event.issue.user.login
       && github.event.comment.user.type != 'Bot'
     permissions:
       issues: write
