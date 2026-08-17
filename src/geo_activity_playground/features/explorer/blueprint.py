@@ -46,7 +46,8 @@ from ...core.meta_search import (
 from ...core.raster_map import OSM_TILE_SIZE, ImageTransform, TileGetter
 from ...core.tile_visits import (
     get_activity_ids_in_bounds,
-    get_latest_new_tiles_activity_id,
+    get_latest_new_tiles_day,
+    get_new_tiles_activity_ids_on_day,
     get_tile_count,
     get_tile_history_df,
     get_tile_medians,
@@ -94,7 +95,7 @@ from .tile_rendering import (
     _resolve_color_strategy,
     _tile_bounds,
     hex_color_to_tuple,
-    render_activity_line_tile_image,
+    render_activity_lines_tile_image,
     render_inaccessible_tile_image,
     render_tile_style_preview,
 )
@@ -579,30 +580,46 @@ def make_explorer_blueprint(
         zoom: int, z: int, x: int, y: int
     ) -> ResponseReturnValue:
         empty = np.zeros((OSM_TILE_SIZE, OSM_TILE_SIZE, 4), dtype=np.float32)
-        activity_id = request.args.get(
-            "activity_id", type=int
-        ) or get_latest_new_tiles_activity_id(zoom)
-        if activity_id is None:
+        requested_id = request.args.get("activity_id", type=int)
+        if requested_id is not None:
+            activity_ids = {requested_id}
+        else:
+            day = get_latest_new_tiles_day(zoom)
+            activity_ids = (
+                set(get_new_tiles_activity_ids_on_day(zoom, day))
+                if day is not None
+                else set()
+            )
+        if not activity_ids:
             return _png_response(empty)
 
-        # The activity tiles tell us cheaply whether the track can be visible
-        # here at all, which spares us reading its time series for most tiles.
+        # The activity tiles tell us cheaply which tracks can be visible here at
+        # all, which spares us reading their time series for most tiles.
         tile_bounds = _tile_bounds(zoom, z, x, y)
-        if activity_id not in get_activity_ids_in_bounds(
+        activity_ids &= get_activity_ids_in_bounds(
             zoom,
             tile_bounds.x_min,
             tile_bounds.x_max,
             tile_bounds.y_min,
             tile_bounds.y_max,
-        ):
+        )
+        if not activity_ids:
             return _png_response(empty)
 
-        activity = DB.session.get(Activity, activity_id)
-        if activity is None:
+        activities = [
+            activity
+            for activity_id in sorted(activity_ids)
+            if (activity := DB.session.get(Activity, activity_id)) is not None
+        ]
+        if not activities:
             return _png_response(empty)
         return _png_response(
-            render_activity_line_tile_image(
-                activity.time_series, z, x, y, config_accessor.ui().activity_line_color
+            render_activity_lines_tile_image(
+                (activity.time_series for activity in activities),
+                z,
+                x,
+                y,
+                config_accessor.ui().activity_line_color,
             )
         )
 

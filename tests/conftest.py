@@ -25,10 +25,15 @@ def _clear_process_caches():
     makes cache keys from different tests collide.
     """
     from geo_activity_playground.features.explorer import filtered
+    from geo_activity_playground.features.explorer.tile_rendering import (
+        clear_highlight_caches,
+    )
 
     filtered._process_cache.clear()
+    clear_highlight_caches()
     yield
     filtered._process_cache.clear()
+    clear_highlight_caches()
 
 
 @pytest.fixture

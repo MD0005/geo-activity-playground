@@ -123,7 +123,7 @@ def test_explorer_combined_style_json_explicit_layers(client):
     assert len(data["layers"]) == 1 + 3
 
 
-def test_explorer_latest_new_tiles_isolates_latest_activity(client, app):
+def test_explorer_latest_new_tiles_isolates_latest_day(client, app):
     import io
 
     import numpy as np
@@ -165,8 +165,8 @@ def test_explorer_latest_new_tiles_isolates_latest_activity(client, app):
         return np.asarray(Image.open(io.BytesIO(response.data)).convert("RGBA"))
 
     # The layer is standalone: every visited tile is filled, and the tile first
-    # explored by the latest activity (id=2) gets the distinct "new tile" fill
-    # instead of the plain "visited" one.
+    # explored on the latest day (by activity id=2) gets the distinct "new tile"
+    # fill instead of the plain "visited" one.
     latest = tile_array(101, 200)
     other = tile_array(100, 200)
     assert tuple(latest[128, 128]) != tuple(other[128, 128])

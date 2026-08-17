@@ -4,6 +4,7 @@ import datetime
 import functools
 import hashlib
 import itertools
+from collections.abc import Iterable
 from collections.abc import Set as AbstractSet
 from types import SimpleNamespace
 from typing import Any, NamedTuple
@@ -18,7 +19,9 @@ from ...core.datamodel import UiConfig
 from ...core.raster_map import OSM_TILE_SIZE
 from ...core.tile_visits import (
     get_first_visits_for_activity,
-    get_latest_new_tiles_activity_id,
+    get_latest_new_tiles_day,
+    get_new_tiles_activity_ids_on_day,
+    get_new_tiles_on_day,
 )
 from .clustering import (
     get_cluster_history_cutoff_for_activity,
@@ -467,13 +470,43 @@ class SquarePlannerColorStrategy(ColorStrategy):
             return None
 
 
+class HighlightTiles(NamedTuple):
+    new_tiles: frozenset[tuple[int, int]]
+    cluster_gained: frozenset[tuple[int, int]]
+    old_cluster_tiles: frozenset[tuple[int, int]]
+
+
+def _cluster_context(
+    zoom: int, activity_ids: AbstractSet[int]
+) -> tuple[frozenset[tuple[int, int]], frozenset[tuple[int, int]]]:
+    """Cluster tiles the activities gained, and the cluster before the earliest.
+
+    The backdrop has to predate the *first* of the activities. Taking each
+    activity's own cutoff would let an earlier ride's gains count as
+    pre-existing for a later one on the same day.
+    """
+    gained: set[tuple[int, int]] = set()
+    first_events: list[int] = []
+    for activity_id in activity_ids:
+        gained |= get_cluster_tiles_gained_by_activity(zoom, activity_id)
+        first_event, _last_event = get_cluster_history_cutoff_for_activity(
+            zoom, activity_id
+        )
+        if first_event is not None:
+            first_events.append(first_event)
+    old_cluster_tiles = (
+        get_cluster_tiles_at_cutoff(zoom, min(first_events) - 1)
+        if first_events
+        else set()
+    )
+    return frozenset(gained), frozenset(old_cluster_tiles)
+
+
 @functools.lru_cache(maxsize=32)
 def _activity_highlight_tiles(
     zoom: int, activity_id: int, history_version: int
-) -> tuple[
-    frozenset[tuple[int, int]], frozenset[tuple[int, int]], frozenset[tuple[int, int]]
-]:
-    """New tiles, newly clustered tiles, and pre-existing cluster tiles.
+) -> HighlightTiles:
+    """What a single activity discovered and clustered.
 
     Both lookups are indexed queries, but a viewport asks for many tile images
     at once, so the cache saves the repeated round trips. The history version is
@@ -483,16 +516,34 @@ def _activity_highlight_tiles(
         (tile_visit.tile_x, tile_visit.tile_y)
         for tile_visit in get_first_visits_for_activity(activity_id, zoom)
     )
-    cluster_gained = get_cluster_tiles_gained_by_activity(zoom, activity_id)
-    first_event, _last_event = get_cluster_history_cutoff_for_activity(
-        zoom, activity_id
+    return HighlightTiles(new_tiles, *_cluster_context(zoom, {activity_id}))
+
+
+@functools.lru_cache(maxsize=32)
+def _day_highlight_tiles(
+    zoom: int, day: datetime.date, history_version: int
+) -> HighlightTiles:
+    """What a whole local day discovered and clustered.
+
+    Tiles are taken by their own first-visit date rather than through the
+    activities, so a tour spanning midnight contributes only what it found on
+    this day.
+    """
+    return HighlightTiles(
+        get_new_tiles_on_day(zoom, day),
+        *_cluster_context(zoom, get_new_tiles_activity_ids_on_day(zoom, day)),
     )
-    old_cluster_tiles = (
-        get_cluster_tiles_at_cutoff(zoom, first_event - 1)
-        if first_event is not None
-        else set()
-    )
-    return new_tiles, frozenset(cluster_gained), frozenset(old_cluster_tiles)
+
+
+def clear_highlight_caches() -> None:
+    """Drop the memoized highlights, which outlive the data they came from.
+
+    The history version invalidates them as activities arrive, but it starts at
+    zero for every database, so a database replaced within one process would
+    otherwise keep answering from the previous one.
+    """
+    _activity_highlight_tiles.cache_clear()
+    _day_highlight_tiles.cache_clear()
 
 
 def _tile_bounds(zoom: int, z: int, x: int, y: int) -> Bounds:
@@ -566,18 +617,25 @@ def _resolve_color_strategy(
         case "visited":
             return VisitedColorStrategy(tile_visits, styles)
         case "latest_new":
-            activity_id = request.args.get(
-                "activity_id", type=int
-            ) or get_latest_new_tiles_activity_id(zoom)
-            if activity_id is None:
-                return ActivityHighlightColorStrategy(
-                    set(), set(), set(), tile_visits, styles
+            history_version = get_cluster_history_latest_event_index(zoom)
+            activity_id = request.args.get("activity_id", type=int)
+            if activity_id is not None:
+                highlight = _activity_highlight_tiles(
+                    zoom, activity_id, history_version
                 )
-            new_tiles, cluster_gained, old_cluster_tiles = _activity_highlight_tiles(
-                zoom, activity_id, get_cluster_history_latest_event_index(zoom)
-            )
+            else:
+                day = get_latest_new_tiles_day(zoom)
+                highlight = (
+                    _day_highlight_tiles(zoom, day, history_version)
+                    if day is not None
+                    else HighlightTiles(frozenset(), frozenset(), frozenset())
+                )
             return ActivityHighlightColorStrategy(
-                new_tiles, cluster_gained, old_cluster_tiles, tile_visits, styles
+                highlight.new_tiles,
+                highlight.cluster_gained,
+                highlight.old_cluster_tiles,
+                tile_visits,
+                styles,
             )
         case "square_planner":
             return SquarePlannerColorStrategy(
@@ -709,25 +767,31 @@ def render_inaccessible_tile_image(
     return result
 
 
-def render_activity_line_tile_image(
-    time_series: pd.DataFrame, z: int, x: int, y: int, line_color: str
+def render_activity_lines_tile_image(
+    time_series: Iterable[pd.DataFrame], z: int, x: int, y: int, line_color: str
 ) -> np.ndarray:
-    """Draw the track of one activity into a raster tile."""
+    """Draw the tracks of one or more activities into a raster tile.
+
+    The tracks share one mask, so overlapping recordings of the same route come
+    out as a single line rather than a darker one.
+    """
     mask = Image.new("L", (OSM_TILE_SIZE, OSM_TILE_SIZE))
     draw = ImageDraw.Draw(mask)
     line_width = min(6, max(2, z - 10))
-    for _segment_id, group in time_series.groupby("segment_id"):
-        pixels = (
-            np.array([group["x"] * 2**z - x, group["y"] * 2**z - y]).T * OSM_TILE_SIZE
-        )
-        if len(pixels) < 2:
-            continue
-        draw.line(
-            [(px, py) for px, py in pixels],
-            fill=255,
-            width=line_width,
-            joint="curve",
-        )
+    for series in time_series:
+        for _segment_id, group in series.groupby("segment_id"):
+            pixels = (
+                np.array([group["x"] * 2**z - x, group["y"] * 2**z - y]).T
+                * OSM_TILE_SIZE
+            )
+            if len(pixels) < 2:
+                continue
+            draw.line(
+                [(px, py) for px, py in pixels],
+                fill=255,
+                width=line_width,
+                joint="curve",
+            )
     result = np.zeros((OSM_TILE_SIZE, OSM_TILE_SIZE, 4), dtype=np.float32)
     result[:, :, :3] = hex_color_to_float(line_color + "ff").reshape(4)[:3]
     result[:, :, 3] = np.array(mask, dtype=np.float32) / 255.0

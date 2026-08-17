@@ -1,7 +1,6 @@
 import calendar
 import collections
 import datetime
-import zoneinfo
 
 import altair as alt
 import geojson
@@ -20,6 +19,7 @@ from ...core.datamodel import (
     get_time_series,
     query_activity_meta,
 )
+from ...core.time_conversion import local_ymd_from_utc
 from ..explorer.clustering import (
     get_cluster_tile_activations_df,
     get_square_history_df,
@@ -47,29 +47,6 @@ def _meta_with_local_start() -> pd.DataFrame:
     return meta.loc[~pd.isna(meta["start_local"])].copy()
 
 
-def _local_ymd_from_utc(
-    event_time: datetime.datetime | pd.Timestamp | None,
-    activity_start: datetime.datetime | pd.Timestamp | None,
-    iana_timezone: str | None,
-) -> tuple[int | None, int | None, int | None]:
-    if event_time is None or pd.isna(event_time):
-        if activity_start is None or pd.isna(activity_start):
-            return None, None, None
-        timestamp = pd.Timestamp(activity_start)
-    else:
-        timestamp = pd.Timestamp(event_time)
-    if timestamp.tz is None:
-        timestamp = timestamp.tz_localize(zoneinfo.ZoneInfo("UTC"))
-
-    timezone_name = "UTC" if iana_timezone is None else iana_timezone
-    try:
-        timezone = zoneinfo.ZoneInfo(timezone_name)
-    except zoneinfo.ZoneInfoNotFoundError:
-        timezone = zoneinfo.ZoneInfo("UTC")
-    local = timestamp.tz_convert(timezone)
-    return int(local.year), int(local.month), int(local.day)
-
-
 def _tile_first_visits(zoom: int) -> pd.DataFrame:
     rows = DB.session.execute(
         sqlalchemy.select(
@@ -94,7 +71,7 @@ def _tile_first_visits(zoom: int) -> pd.DataFrame:
     frame["first_time"] = pd.to_datetime(frame["first_time"])
     frame["activity_start"] = pd.to_datetime(frame["activity_start"])
     local_dates = [
-        _local_ymd_from_utc(
+        local_ymd_from_utc(
             event_time,
             activity_start,
             None if pd.isna(iana_timezone) else str(iana_timezone),
@@ -147,7 +124,7 @@ def _cluster_tile_activations(zoom: int) -> pd.DataFrame:
         else:
             start, iana_timezone = activity_meta.get(int(activity_id), (None, None))
         local_dates.append(
-            _local_ymd_from_utc(
+            local_ymd_from_utc(
                 event_time,
                 start,
                 None
