@@ -17,6 +17,13 @@ Types of changes
 
 ## Unreleased
 
+
+## Version 1.49.0 — 2026-08-16
+
+Added:
+
+- Add an "Activity track color" setting under Settings → Tile Rendering, used both for the "New Tiles Activity Track" tile layer and for the track line on the activity page. It was previously fixed to red. ([GH-476](https://github.com/martin-ueding/geo-activity-playground/issues/476))
+
 Changed:
 
 - The webserver now refuses to start when the bundled JavaScript and CSS assets are missing, instead of serving unstyled pages. The error message explains that npm is needed to build them. ([GH-491](https://github.com/martin-ueding/geo-activity-playground/issues/491))

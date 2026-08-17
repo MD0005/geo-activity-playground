@@ -467,7 +467,7 @@ def test_tile_rendering_settings_round_trip(client, app):
     assert b"new_tile_border_color" in response.data
     assert b"inaccessible_stripe_color" in response.data
 
-    data = {"cmap_opacity": "0.5"}
+    data = {"cmap_opacity": "0.5", "activity_line_color": "#00ff00"}
     for name in TileStyleName:
         for element in ("fill", "border", "stripe"):
             data[f"{name}_{element}_color"] = "#000000"

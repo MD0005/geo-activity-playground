@@ -86,6 +86,7 @@ _UI_KEYS = (
     "color_scheme_for_kind",
     "color_scheme_for_heatmap",
     "color_strategy_cmap_opacity",
+    "activity_line_color",
     "eighth_marker_min_distance_km",
     "eighth_marker_min_duration_hours",
     "explorer_zoom_levels",

@@ -774,6 +774,11 @@ class UiConfig(DB.Model):
     color_strategy_cmap_opacity: Mapped[float] = mapped_column(
         sa.Float, nullable=False, default=0.5
     )
+    activity_line_color: Mapped[str] = mapped_column(
+        sa.String, nullable=False, default="#e41a1c", server_default="#e41a1c"
+    )
+    """Color of the solid activity track line, drawn both as a tile layer and
+    as a GeoJSON overlay on the activity page."""
     eighth_marker_min_distance_km: Mapped[float] = mapped_column(
         sa.Float, nullable=False, default=30.0
     )

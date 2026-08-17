@@ -530,9 +530,9 @@
 
         const map = L.map(container, { fullscreenControl: true });
 
-        // Add activity track (red line)
+        // Add activity track
         L.geoJSON(trackGeojson, {
-            style: { color: "#ff0000" },
+            style: { color: "{{ activity_line_color }}" },
             filter: function (feature) {
                 return feature.geometry.type !== 'Point';
             }

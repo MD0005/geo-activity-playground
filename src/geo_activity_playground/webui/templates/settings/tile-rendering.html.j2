@@ -75,6 +75,13 @@
         <div class="form-text">{{ _('Opacity of the color strategies that compute a color from a color map, such as the colorful clusters or the visit count.') }}</div>
     </div>
 
+    <div class="mb-3">
+        <label for="activity_line_color" class="form-label">{{ _('Activity track color') }}</label>
+        <input type="color" class="form-control form-control-color" id="activity_line_color"
+            name="activity_line_color" value="{{ activity_line_color }}" />
+        <div class="form-text">{{ _('Color of the solid activity track line, used both for the “New Tiles Activity Track” tile layer and for the track shown on the activity page.') }}</div>
+    </div>
+
     <button type="submit" class="btn btn-primary">{{ _('Save') }}</button>
 </form>
 

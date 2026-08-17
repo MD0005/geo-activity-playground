@@ -601,7 +601,9 @@ def make_explorer_blueprint(
         if activity is None:
             return _png_response(empty)
         return _png_response(
-            render_activity_line_tile_image(activity.time_series, z, x, y)
+            render_activity_line_tile_image(
+                activity.time_series, z, x, y, config_accessor.ui().activity_line_color
+            )
         )
 
     @blueprint.route("/<int:zoom>/inaccessible-tile/<int:z>/<int:x>/<int:y>.png")
