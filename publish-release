@@ -89,15 +89,14 @@ def commit_version_bump(version: str) -> None:
 def create_git_tag(version: str) -> None:
     step("Create git tag")
     if not capture("git", "tag", "-l", version):
-        run("git", "tag", version)
+        run("git", "tag", "-a", version, "-m", version)
     else:
         print(f"[skip] tag {version} already exists")
 
 
 def push_commits_and_tags() -> None:
     step("Push commits and tags")
-    run("git", "push")
-    run("git", "push", "--tags")
+    run("git", "push", "--follow-tags")
 
 
 def build_wheel() -> None:
@@ -191,14 +190,14 @@ def restore_unreleased_section() -> None:
         print("[skip] ## Unreleased already present")
 
 
-def commit_and_push_changelog_restore() -> None:
-    step("Commit and push changelog restore")
+def commit_changelog_restore() -> None:
+    step("Commit changelog restore")
     final_msg = "docs: add unreleased section to changelog"
     if capture("git", "status", "--porcelain"):
         run("git", "commit", "-a", "-m", final_msg)
+        print("Not pushed; goes out with the next change.")
     else:
         print("[skip] nothing to commit")
-    run("git", "push")
 
 
 def main() -> None:
@@ -214,7 +213,7 @@ def main() -> None:
     create_github_release(version)
     post_to_mastodon(version)
     restore_unreleased_section()
-    commit_and_push_changelog_restore()
+    commit_changelog_restore()
     print("\nRelease complete.")
 
 

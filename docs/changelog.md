@@ -15,8 +15,11 @@ Types of changes
 
 <!-- next version below this line -->
 
-## Unreleased
+## Version 1.50.0 — 2026-08-18
 
+Changed:
+
+- The “New Tiles & Cluster Growth” and “New Tiles Activity Track” layers default to the last day with new tiles instead of the last activity with new tiles, so days recorded as several activities show all of them. The `activity_id` parameter still selects a single activity.
 
 ## Version 1.49.0 — 2026-08-16
 

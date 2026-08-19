@@ -4,7 +4,7 @@ import json
 import logging
 import zoneinfo
 from collections.abc import Iterator
-from typing import TypedDict
+from typing import NamedTuple, TypedDict
 
 import pandas as pd
 import sqlalchemy as sa
@@ -20,6 +20,7 @@ from .datamodel import (
     get_time_series,
 )
 from .tiles import interpolate_missing_tile
+from .time_conversion import local_date_from_utc
 
 logger = logging.getLogger(__name__)
 
@@ -44,18 +45,81 @@ def get_first_visits_for_activity(
     return query.all()
 
 
-def get_latest_new_tiles_activity_id(zoom: int) -> int | None:
-    """Return the activity that most recently discovered a new tile at this zoom."""
-    row = (
-        DB.session.query(TileVisit.first_activity_id)
-        .filter(TileVisit.zoom == zoom)
-        .order_by(
-            TileVisit.first_time.desc(),
-            TileVisit.first_activity_id.desc(),
+class NewTileOnDay(NamedTuple):
+    day: datetime.date
+    activity_id: int
+    tile_x: int
+    tile_y: int
+
+
+def _new_tiles_by_local_day(
+    zoom: int,
+    since: datetime.datetime | None = None,
+    until: datetime.datetime | None = None,
+) -> Iterator[NewTileOnDay]:
+    """First tile visits within a UTC window, dated in the recording timezone.
+
+    The window is in UTC while the day is local, so callers have to pad it by a
+    day on either side to be sure they see every visit belonging to a local day.
+    """
+    query = (
+        sa.select(
+            TileVisit.first_time,
+            TileVisit.first_activity_id,
+            TileVisit.tile_x,
+            TileVisit.tile_y,
+            Activity.start,
+            Activity.iana_timezone,
         )
-        .first()
+        .join(Activity, Activity.id == TileVisit.first_activity_id)
+        .where(TileVisit.zoom == zoom)
     )
-    return row[0] if row else None
+    if since is not None:
+        query = query.where(
+            sa.or_(TileVisit.first_time.is_(None), TileVisit.first_time >= since)
+        )
+    if until is not None:
+        query = query.where(
+            sa.or_(TileVisit.first_time.is_(None), TileVisit.first_time <= until)
+        )
+    for row in DB.session.execute(query):
+        day = local_date_from_utc(row.first_time, row.start, row.iana_timezone)
+        if day is not None:
+            yield NewTileOnDay(day, row.first_activity_id, row.tile_x, row.tile_y)
+
+
+def get_latest_new_tiles_day(zoom: int) -> datetime.date | None:
+    """The most recent local day on which any tile was first visited."""
+    latest = DB.session.scalar(
+        sa.select(sa.func.max(TileVisit.first_time)).where(TileVisit.zoom == zoom)
+    )
+    since = latest - datetime.timedelta(days=2) if latest is not None else None
+    return max((row.day for row in _new_tiles_by_local_day(zoom, since)), default=None)
+
+
+def _day_window(day: datetime.date) -> tuple[datetime.datetime, datetime.datetime]:
+    midnight = datetime.datetime.combine(day, datetime.time())
+    return midnight - datetime.timedelta(days=1), midnight + datetime.timedelta(days=2)
+
+
+def get_new_tiles_on_day(zoom: int, day: datetime.date) -> frozenset[tuple[int, int]]:
+    """Tiles first visited on the given local day."""
+    since, until = _day_window(day)
+    return frozenset(
+        (row.tile_x, row.tile_y)
+        for row in _new_tiles_by_local_day(zoom, since, until)
+        if row.day == day
+    )
+
+
+def get_new_tiles_activity_ids_on_day(zoom: int, day: datetime.date) -> frozenset[int]:
+    """Activities that first visited a tile on the given local day."""
+    since, until = _day_window(day)
+    return frozenset(
+        row.activity_id
+        for row in _new_tiles_by_local_day(zoom, since, until)
+        if row.day == day
+    )
 
 
 def get_tile_history_df(zoom: int) -> pd.DataFrame:
