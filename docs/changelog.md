@@ -15,6 +15,28 @@ Types of changes
 
 <!-- next version below this line -->
 
+## Version 1.51.0 — 2026-08-23
+
+Added:
+
+- The date headings in the “Latest activities” list on the landing page link to the respective day overview.
+- The landing page shows week, month and year totals against the previous period.
+- The landing page lists recently used equipment with its maintenance progress and the best activities of the last 90 days.
+- After an update, a dismissible note at the top of the page states the previously used version and links to the changelog, once per browser. ([GH-495](https://github.com/martin-ueding/geo-activity-playground/issues/495))
+
+Changed:
+
+- All charts now scale to the width of their container instead of using a fixed pixel width. Charts in tabs no longer render at a fallback width.
+- The landing page is split into an activity feed and a sidebar with the auxiliary statistics.
+
+Fixed:
+
+- The map tile URL is now validated before it is stored, so a faulty one is reported in the form instead of breaking the settings page. ([GH-494](https://github.com/martin-ueding/geo-activity-playground/issues/494))
+- The widespread `{z}` placeholder in map tile URLs is accepted and converted into `{zoom}`. ([GH-494](https://github.com/martin-ueding/geo-activity-playground/issues/494))
+- Tile sources that serve 512 px tiles, like MapTiler, no longer produce scrambled images; such tiles are downscaled to 256 px. ([GH-494](https://github.com/martin-ueding/geo-activity-playground/issues/494))
+- The Mapterhorn hillshade no longer fades out as one zooms in; the webui corrects the fixed gradient scaling of `leaflet-relief` ([upstream bug](https://github.com/glandais/leaflet-relief/issues/94)). ([GH-475](https://github.com/martin-ueding/geo-activity-playground/issues/475))
+
+
 ## Version 1.50.0 — 2026-08-18
 
 Changed:

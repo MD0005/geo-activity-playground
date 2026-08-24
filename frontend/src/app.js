@@ -17,9 +17,13 @@ import "bootstrap/dist/css/bootstrap.min.css";
 import bootstrap from "bootstrap/dist/js/bootstrap.bundle.min.js";
 window.bootstrap = bootstrap;
 import "./bootstrap-dark-mode.js";
+import "./version-notice.js";
 
 import vegaEmbed from "vega-embed";
 window.vegaEmbed = vegaEmbed;
+
+import { embedChart } from "./vega.js";
+window.embedChart = embedChart;
 
 import "table-sort-js";
 
