@@ -15,6 +15,26 @@ Types of changes
 
 <!-- next version below this line -->
 
+## Version 1.54.0 — 2026-08-30
+
+Added:
+
+- Allow removing a picture from equipment. ([GH-507](https://github.com/martin-ueding/geo-activity-playground/issues/507))
+- Allow deleting equipment that has no activities or kind assigned to it. ([GH-506](https://github.com/martin-ueding/geo-activity-playground/issues/506))
+- Set the `serve` options host, port, HTTP server, workers and threads via the `GAP_*` environment variables. ([GH-510](https://github.com/martin-ueding/geo-activity-playground/issues/510))
+
+Changed:
+
+- Derive the default number of worker processes from the available CPU cores and memory instead of always using 4. Small containers now start fewer workers. ([GH-510](https://github.com/martin-ueding/geo-activity-playground/issues/510))
+
+Fixed:
+
+- Make explorer tiles clickable again when there is no cluster to zoom to, like on a fresh installation. ([GH-512](https://github.com/martin-ueding/geo-activity-playground/pull/512))
+- Honor the "Show progress markers on the activity map" setting on all maps, not just the activity page. ([GH-511](https://github.com/martin-ueding/geo-activity-playground/pull/511))
+- Seed the cluster and square history plots with counted inaccessible tiles, so they no longer contradict the headline numbers. ([GH-513](https://github.com/martin-ueding/geo-activity-playground/issues/513))
+- Apply the "apply privacy zones to activity tracks" setting to the "New Tiles Activity Track" map layer as well. ([GH-509](https://github.com/martin-ueding/geo-activity-playground/issues/509))
+- Sum calories across all session messages in a FIT file instead of keeping only the last one, fixing chained/concatenated FIT files. ([GH-508](https://github.com/martin-ueding/geo-activity-playground/issues/508))
+
 ## Version 1.53.0 — 2026-08-29
 
 Added:

@@ -302,16 +302,18 @@ def _equipment_plots(config_accessor: ConfigAccessor, equipment: str) -> dict[st
 
 def _apply_uploaded_picture(equipment: Equipment, flasher: Flasher) -> None:
     image_file = request.files.get("image")
-    if not image_file or not image_file.filename:
-        return
-    try:
-        new_filename = save_internal_picture(image_file)
-    except ValueError as e:
-        flasher.flash_message(str(e), FlashTypes.WARNING)
-        return
-    if equipment.picture_filename:
+    if image_file and image_file.filename:
+        try:
+            new_filename = save_internal_picture(image_file)
+        except ValueError as e:
+            flasher.flash_message(str(e), FlashTypes.WARNING)
+            return
+        if equipment.picture_filename:
+            delete_internal_picture(equipment.picture_filename)
+        equipment.picture_filename = new_filename
+    elif request.form.get("remove_image") and equipment.picture_filename:
         delete_internal_picture(equipment.picture_filename)
-    equipment.picture_filename = new_filename
+        equipment.picture_filename = None
 
 
 def make_equipment_blueprint(
@@ -420,6 +422,43 @@ def make_equipment_blueprint(
             )
             return redirect(url_for(".show", id=equipment.id))
         return render_template("equipment/edit.html.j2", equipment=equipment)
+
+    @blueprint.route("/<int:id>/delete", methods=["POST"])
+    @needs_authentication(authenticator)
+    def delete(id: int) -> ResponseReturnValue:
+        equipment = DB.session.get_one(Equipment, id)
+        if equipment.activities:
+            flasher.flash_message(
+                _(
+                    "Equipment '%(name)s' cannot be deleted because it has activities assigned to it.",
+                    name=equipment.name,
+                ),
+                FlashTypes.WARNING,
+            )
+            return redirect(url_for(".show", id=equipment.id))
+        if equipment.default_for_kinds:
+            flasher.flash_message(
+                _(
+                    "Equipment '%(name)s' cannot be deleted because it is the default equipment for a kind.",
+                    name=equipment.name,
+                ),
+                FlashTypes.WARNING,
+            )
+            return redirect(url_for(".show", id=equipment.id))
+
+        equipment_name = equipment.name
+        if equipment.picture_filename:
+            delete_internal_picture(equipment.picture_filename)
+        for action in equipment.maintenance_actions:
+            for photo in action.photos:
+                delete_internal_picture(photo.filename)
+        DB.session.delete(equipment)
+        DB.session.commit()
+        flasher.flash_message(
+            _("Equipment '%(name)s' deleted.", name=equipment_name),
+            FlashTypes.SUCCESS,
+        )
+        return redirect(url_for(".index"))
 
     @blueprint.route("/new", methods=["GET", "POST"])
     @needs_authentication(authenticator)

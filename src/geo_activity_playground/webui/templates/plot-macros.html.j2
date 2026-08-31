@@ -74,12 +74,14 @@
                 return {};
             },
             pointToLayer: (feature, latlng) => {
+                {% if show_progress_markers %}
                 const progress = feature?.properties?.marker_progress;
                 if (Number.isFinite(progress)) {
                     return L.marker(latlng, {
                         icon: window.progressMarkerIcon(progress, feature?.properties?.marker_is_eighth)
                     });
                 }
+                {% endif %}
                 return L.circleMarker(latlng);
             }
         }).addTo(map)

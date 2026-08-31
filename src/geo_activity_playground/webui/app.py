@@ -43,6 +43,7 @@ from ..core.datamodel import (
 )
 from ..core.db_maintenance import run_database_maintenance_if_due
 from ..core.heart_rate import HeartRateZoneComputer
+from ..core.host_resources import default_worker_count
 from ..core.paths import TIME_SERIES_DIR
 from ..core.raster_map import (
     BlankImageTransform,
@@ -459,6 +460,7 @@ def create_app(
             "num_activities": count_activities(),
             "map_tile_attribution": config_accessor.map().map_tile_attribution,
             "currency": config_accessor.ui().currency,
+            "show_progress_markers": config_accessor.ui().show_progress_markers,
             "request_url": urllib.parse.quote_plus(request.url),
             "explorer_zoom_levels": sorted(config_accessor.ui().explorer_zoom_levels)
             or [14],
@@ -496,8 +498,9 @@ def web_ui_main(
     hammerhead_end: str | None = None,
     http_server: Literal["waitress", "werkzeug", "gunicorn"] = "gunicorn",
     threads: int = 8,
-    workers: int = 4,
+    workers: int | None = None,
 ) -> None:
+    workers = workers or default_worker_count()
     os.chdir(basedir)
 
     warnings.filterwarnings("ignore", "__array__ implementation doesn't")
