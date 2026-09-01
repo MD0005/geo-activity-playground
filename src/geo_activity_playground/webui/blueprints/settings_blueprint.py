@@ -46,6 +46,7 @@ from ...core.raster_map import (
     probe_tile_url,
     tile_url_template_error,
 )
+from ...core.scan import refresh_stale_ingests
 from ...core.tag_extraction import apply_tag_extraction, get_tags_with_extraction_regex
 from ...core.tile_visits import (
     _reset_tile_visits_db,
@@ -89,11 +90,6 @@ from ...features.segments.model import Segment, SegmentCheck, SegmentMatch
 from ...features.square_planner.model import SquarePlannerBookmark
 from ...features.strava.api_importer import refresh_activity_names_from_strava
 from ...features.strava.blueprint import register_strava_settings
-from ...importers.activity_parsers import (
-    ActivityParseError,
-    NoGeoDataError,
-    read_activity,
-)
 from ..authenticator import Authenticator, needs_authentication
 from ..columns import TOGGLEABLE_TABLE_COLUMNS
 from ..flasher import Flasher, FlashTypes
@@ -109,6 +105,13 @@ HILLSHADE_BLEND_MODES = [
     "hard-light",
     "normal",
 ]
+
+GRID_LINE_MIN_WIDTH_PX_OPTIONS = [16, 32, 64, 128, 256]
+"""Explorer tile widths, in on-screen pixels, offered for the grid line threshold.
+
+An explorer tile shrinks to half its width for each map zoom level you zoom
+out, so these are the widths at which it would appear at all displayed zoom
+levels; anything in between would never be reached exactly."""
 
 
 def _import_exclusion_reasons() -> dict[str, str]:
@@ -204,33 +207,15 @@ def _reprocess_all_activities(
         update_and_commit(activity, time_series, config, force=force)
 
 
-def _reimport_time_series_from_files(
-    config: ActivityImportConfig,
-) -> tuple[int, int, int]:
-    activities = DB.session.scalars(
-        sqlalchemy.select(Activity).filter(Activity.path.is_not(sqlalchemy.null()))
-    ).all()
-    reimported = skipped = errors = 0
-    for activity in tqdm(activities, desc="Re-importing time series from files"):
-        assert activity.path is not None
-        path = pathlib.Path(activity.path)
-        if not path.exists():
-            logger.warning(f"Activity file not found, skipping: {path}")
-            skipped += 1
-            continue
-        try:
-            _, time_series = read_activity(path)
-        except (ActivityParseError, NoGeoDataError) as e:
-            logger.error(f"Could not parse {path}: {e}")
-            errors += 1
-            continue
-        except Exception:
-            logger.exception(f"Unexpected error parsing {path}")
-            errors += 1
-            continue
-        update_and_commit(activity, time_series, config, force=True)
-        reimported += 1
-    return reimported, skipped, errors
+def _reparse_activities(config_accessor: ConfigAccessor) -> tuple[int, int]:
+    """Read every activity again from the artifact its source kept.
+
+    This is the ingest stage of the pipeline, run on demand rather than because a
+    version stamp moved on. The file layer, the time series and every derived field
+    are rebuilt from the source data; the user layer is not touched, so names, kinds,
+    equipment and tags that were set by hand survive.
+    """
+    return refresh_stale_ingests(config_accessor, force=True)
 
 
 def _truncate_user_content_tables() -> None:
@@ -526,22 +511,14 @@ def make_settings_blueprint(
                     % {"updated_names": updated_names},
                     FlashTypes.SUCCESS,
                 )
-            elif action == "reimport_time_series_from_files":
-                logger.info(
-                    "User requested re-import of time series from activity files."
-                )
-                reimported, skipped, errors = _reimport_time_series_from_files(
-                    config_accessor.activity_import()
-                )
+            elif action == "reparse_activities":
+                logger.info("User requested a re-parse of all activities.")
+                reparsed, skipped = _reparse_activities(config_accessor)
                 flasher.flash_message(
                     _(
-                        "Re-imported time series from activity files: %(reimported)s re-imported, %(skipped)s skipped (file missing), %(errors)s errors."
+                        "Re-parsed %(reparsed)s activities from their source data, %(skipped)s skipped because their source data is not available."
                     )
-                    % {
-                        "reimported": reimported,
-                        "skipped": skipped,
-                        "errors": errors,
-                    },
+                    % {"reparsed": reparsed, "skipped": skipped},
                     FlashTypes.SUCCESS,
                 )
             elif action in ("fix_timezone_local_to_utc", "fix_timezone_utc_to_utc"):
@@ -775,6 +752,13 @@ def make_settings_blueprint(
             config_accessor.ui().activity_line_color = request.form[
                 "activity_line_color"
             ]
+            config_accessor.ui().explorer_grid_line_color = _combine_color(
+                request.form["grid_line_color"],
+                int(request.form["grid_line_alpha"]),
+            )
+            config_accessor.ui().explorer_grid_line_min_width_px = int(
+                request.form["grid_line_min_width_px"]
+            )
             config_accessor.save()
             flash(_("Updated tile rendering."), category="success")
 
@@ -815,6 +799,11 @@ def make_settings_blueprint(
             ],
             cmap_opacity=config_accessor.ui().color_strategy_cmap_opacity,
             activity_line_color=config_accessor.ui().activity_line_color,
+            grid_line_color=_split_hex_into_color_alpha(
+                config_accessor.ui().explorer_grid_line_color
+            ),
+            grid_line_min_width_px=config_accessor.ui().explorer_grid_line_min_width_px,
+            grid_line_min_width_px_options=GRID_LINE_MIN_WIDTH_PX_OPTIONS,
         )
 
     @blueprint.route("/manage-kinds")
