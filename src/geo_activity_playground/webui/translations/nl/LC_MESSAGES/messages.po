@@ -6,7 +6,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PROJECT VERSION\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2026-08-31 16:01+0200\n"
+"POT-Creation-Date: 2026-09-27 18:39+0200\n"
 "PO-Revision-Date: 2025-12-13 08:39+0100\n"
 "Last-Translator: \n"
 "Language: nl\n"
@@ -17,20 +17,20 @@ msgstr ""
 "Content-Transfer-Encoding: 8bit\n"
 "Generated-By: Babel 2.17.0\n"
 
-#: src/geo_activity_playground/features/activity/blueprint.py:392
+#: src/geo_activity_playground/features/activity/blueprint.py:373
 msgid "Could not parse start time."
 msgstr "Kon de starttijd niet lezen."
 
-#: src/geo_activity_playground/features/activity/blueprint.py:436
+#: src/geo_activity_playground/features/activity/blueprint.py:425
 #, python-format
 msgid "Updated %(count)s activities."
 msgstr "%(count)s activiteiten bijgewerkt."
 
-#: src/geo_activity_playground/features/activity/blueprint.py:530
+#: src/geo_activity_playground/features/activity/blueprint.py:513
 msgid "Activity has been re-enriched."
 msgstr "Activiteit is opnieuw verrijkt."
 
-#: src/geo_activity_playground/features/activity/blueprint.py:543
+#: src/geo_activity_playground/features/activity/blueprint.py:526
 msgid ""
 "This activity could not be re-imported because its source data is not "
 "available."
@@ -38,7 +38,7 @@ msgstr ""
 "Deze activiteit kon niet opnieuw worden geïmporteerd, omdat de "
 "brongegevens niet beschikbaar zijn."
 
-#: src/geo_activity_playground/features/activity/blueprint.py:551
+#: src/geo_activity_playground/features/activity/blueprint.py:534
 msgid ""
 "The activity has been read again from its source data. Your edits have "
 "been kept."
@@ -46,12 +46,12 @@ msgstr ""
 "De activiteit is opnieuw uit de brongegevens ingelezen. Je wijzigingen "
 "zijn behouden."
 
-#: src/geo_activity_playground/features/activity/blueprint.py:608
+#: src/geo_activity_playground/features/activity/blueprint.py:591
 #, python-format
 msgid "The activity and its source file %(path)s have been deleted."
 msgstr "De activiteit en het bronbestand %(path)s zijn verwijderd."
 
-#: src/geo_activity_playground/features/activity/blueprint.py:615
+#: src/geo_activity_playground/features/activity/blueprint.py:598
 msgid ""
 "The activity has been hidden. Its source data is left untouched, but it "
 "will not be imported again. You can undo this from Settings → Excluded "
@@ -62,18 +62,18 @@ msgstr ""
 "via Instellingen → Uitgesloten activiteiten of door het bestand opnieuw "
 "te uploaden."
 
-#: src/geo_activity_playground/features/activity/blueprint.py:638
+#: src/geo_activity_playground/features/activity/blueprint.py:621
 #: src/geo_activity_playground/webui/columns.py:61
 msgid "Speed"
 msgstr "Snelheid"
 
-#: src/geo_activity_playground/features/activity/blueprint.py:641
-#: src/geo_activity_playground/features/activity/blueprint.py:671
+#: src/geo_activity_playground/features/activity/blueprint.py:624
+#: src/geo_activity_playground/features/activity/blueprint.py:654
+#: src/geo_activity_playground/features/activity/blueprint.py:667
 #: src/geo_activity_playground/features/activity/blueprint.py:684
 #: src/geo_activity_playground/features/activity/blueprint.py:701
-#: src/geo_activity_playground/features/activity/blueprint.py:718
-#: src/geo_activity_playground/features/activity/blueprint.py:731
-#: src/geo_activity_playground/features/activity/blueprint.py:744
+#: src/geo_activity_playground/features/activity/blueprint.py:714
+#: src/geo_activity_playground/features/activity/blueprint.py:727
 #: src/geo_activity_playground/features/activity/templates/activity/show.html.j2:116
 #: src/geo_activity_playground/features/explorer/blueprint.py:906
 #: src/geo_activity_playground/features/explorer/blueprint.py:919
@@ -81,8 +81,8 @@ msgstr "Snelheid"
 msgid "Time"
 msgstr "Tijd"
 
-#: src/geo_activity_playground/features/activity/blueprint.py:642
-#: src/geo_activity_playground/features/activity/blueprint.py:660
+#: src/geo_activity_playground/features/activity/blueprint.py:625
+#: src/geo_activity_playground/features/activity/blueprint.py:643
 #: src/geo_activity_playground/features/activity/templates/activity/name.html.j2:66
 #: src/geo_activity_playground/features/calendar/templates/calendar/day.html.j2:47
 #: src/geo_activity_playground/features/explorer/templates/explorer/activities_through_tile.html.j2:38
@@ -90,29 +90,29 @@ msgstr "Tijd"
 msgid "Speed / km/h"
 msgstr "Snelheid / km/u"
 
-#: src/geo_activity_playground/features/activity/blueprint.py:643
+#: src/geo_activity_playground/features/activity/blueprint.py:626
+#: src/geo_activity_playground/features/activity/blueprint.py:656
 #: src/geo_activity_playground/features/activity/blueprint.py:673
 #: src/geo_activity_playground/features/activity/blueprint.py:690
-#: src/geo_activity_playground/features/activity/blueprint.py:707
-#: src/geo_activity_playground/features/activity/blueprint.py:720
-#: src/geo_activity_playground/features/activity/blueprint.py:733
-#: src/geo_activity_playground/features/activity/blueprint.py:746
+#: src/geo_activity_playground/features/activity/blueprint.py:703
+#: src/geo_activity_playground/features/activity/blueprint.py:716
+#: src/geo_activity_playground/features/activity/blueprint.py:729
 #: src/geo_activity_playground/features/segments/templates/segments/match-info.html.j2:4
 #: src/geo_activity_playground/features/segments/templates/segments/show.html.j2:10
 msgid "Segment"
 msgstr "Segment"
 
-#: src/geo_activity_playground/features/activity/blueprint.py:657
+#: src/geo_activity_playground/features/activity/blueprint.py:640
 msgid "Speed distribution"
 msgstr "Snelheidsverdeling"
 
-#: src/geo_activity_playground/features/activity/blueprint.py:661
-#: src/geo_activity_playground/features/activity/blueprint.py:757
+#: src/geo_activity_playground/features/activity/blueprint.py:644
+#: src/geo_activity_playground/features/activity/blueprint.py:740
 msgid "Duration / min"
 msgstr "Duur / min"
 
-#: src/geo_activity_playground/features/activity/blueprint.py:668
-#: src/geo_activity_playground/features/activity/blueprint.py:786
+#: src/geo_activity_playground/features/activity/blueprint.py:651
+#: src/geo_activity_playground/features/activity/blueprint.py:769
 #: src/geo_activity_playground/features/activity/templates/activity/show.html.j2:35
 #: src/geo_activity_playground/features/activity/templates/activity/show.html.j2:114
 #: src/geo_activity_playground/features/bubble_chart/templates/bubble_chart/index.html.j2:54
@@ -125,16 +125,16 @@ msgstr "Duur / min"
 msgid "Distance"
 msgstr "Afstand"
 
-#: src/geo_activity_playground/features/activity/blueprint.py:672
-#: src/geo_activity_playground/features/activity/blueprint.py:789
+#: src/geo_activity_playground/features/activity/blueprint.py:655
+#: src/geo_activity_playground/features/activity/blueprint.py:772
 #: src/geo_activity_playground/features/activity/templates/activity/name.html.j2:64
 #: src/geo_activity_playground/features/activity/templates/activity/show.html.j2:571
-#: src/geo_activity_playground/features/calendar/blueprint.py:171
-#: src/geo_activity_playground/features/calendar/blueprint.py:175
-#: src/geo_activity_playground/features/calendar/blueprint.py:218
-#: src/geo_activity_playground/features/calendar/blueprint.py:222
-#: src/geo_activity_playground/features/calendar/blueprint.py:234
-#: src/geo_activity_playground/features/calendar/blueprint.py:238
+#: src/geo_activity_playground/features/calendar/blueprint.py:172
+#: src/geo_activity_playground/features/calendar/blueprint.py:176
+#: src/geo_activity_playground/features/calendar/blueprint.py:219
+#: src/geo_activity_playground/features/calendar/blueprint.py:223
+#: src/geo_activity_playground/features/calendar/blueprint.py:235
+#: src/geo_activity_playground/features/calendar/blueprint.py:239
 #: src/geo_activity_playground/features/calendar/templates/calendar/day.html.j2:45
 #: src/geo_activity_playground/features/calendar/templates/calendar/wrap-month.html.j2:183
 #: src/geo_activity_playground/features/calendar/templates/calendar/wrap-year.html.j2:185
@@ -145,77 +145,78 @@ msgstr "Afstand"
 #: src/geo_activity_playground/features/explorer/templates/explorer/activities_through_tile.html.j2:36
 #: src/geo_activity_playground/features/plot_builder/analysis.py:17
 #: src/geo_activity_playground/features/segments/templates/segments/show.html.j2:63
+#: src/geo_activity_playground/features/similar_routes/templates/similar_routes/cluster.html.j2:56
 msgid "Distance / km"
 msgstr "Afstand / km"
 
-#: src/geo_activity_playground/features/activity/blueprint.py:681
-#: src/geo_activity_playground/features/activity/templates/activity/show.html.j2:417
+#: src/geo_activity_playground/features/activity/blueprint.py:664
+#: src/geo_activity_playground/features/activity/templates/activity/show.html.j2:414
 #: src/geo_activity_playground/features/calendar/templates/calendar/wrap-month.html.j2:58
 #: src/geo_activity_playground/features/calendar/templates/calendar/wrap-year.html.j2:52
 #: src/geo_activity_playground/webui/columns.py:68
 msgid "Elevation"
 msgstr "Hoogte"
 
-#: src/geo_activity_playground/features/activity/blueprint.py:688
+#: src/geo_activity_playground/features/activity/blueprint.py:671
 #: src/geo_activity_playground/features/calendar/templates/calendar/wrap-month.html.j2:184
 #: src/geo_activity_playground/features/calendar/templates/calendar/wrap-year.html.j2:186
 msgid "Elevation / m"
 msgstr "Hoogte / m"
 
-#: src/geo_activity_playground/features/activity/blueprint.py:698
+#: src/geo_activity_playground/features/activity/blueprint.py:681
 #: src/geo_activity_playground/features/bubble_chart/templates/bubble_chart/index.html.j2:66
 #: src/geo_activity_playground/features/bubble_chart/templates/bubble_chart/index.html.j2:122
 #: src/geo_activity_playground/webui/columns.py:22
 msgid "Elevation Gain"
 msgstr "Hoogteverschil"
 
-#: src/geo_activity_playground/features/activity/blueprint.py:705
+#: src/geo_activity_playground/features/activity/blueprint.py:688
 #: src/geo_activity_playground/features/plot_builder/analysis.py:26
 msgid "Elevation gain / m"
 msgstr "Hoogteverschil / m"
 
-#: src/geo_activity_playground/features/activity/blueprint.py:715
+#: src/geo_activity_playground/features/activity/blueprint.py:698
 #: src/geo_activity_playground/webui/columns.py:75
 #: src/geo_activity_playground/webui/templates/settings/base.html.j2:48
 msgid "Heart Rate"
 msgstr "Hartslag"
 
-#: src/geo_activity_playground/features/activity/blueprint.py:719
-#: src/geo_activity_playground/features/activity/templates/activity/show.html.j2:434
+#: src/geo_activity_playground/features/activity/blueprint.py:702
+#: src/geo_activity_playground/features/activity/templates/activity/show.html.j2:431
 msgid "Heart rate"
 msgstr "Hartslag"
 
-#: src/geo_activity_playground/features/activity/blueprint.py:728
-#: src/geo_activity_playground/features/activity/blueprint.py:732
-#: src/geo_activity_playground/features/activity/templates/activity/show.html.j2:452
+#: src/geo_activity_playground/features/activity/blueprint.py:711
+#: src/geo_activity_playground/features/activity/blueprint.py:715
+#: src/geo_activity_playground/features/activity/templates/activity/show.html.j2:449
 #: src/geo_activity_playground/webui/columns.py:82
 msgid "Cadence"
 msgstr "Cadans"
 
-#: src/geo_activity_playground/features/activity/blueprint.py:741
-#: src/geo_activity_playground/features/activity/templates/activity/show.html.j2:462
+#: src/geo_activity_playground/features/activity/blueprint.py:724
+#: src/geo_activity_playground/features/activity/templates/activity/show.html.j2:459
 #: src/geo_activity_playground/webui/columns.py:89
 msgid "Power"
 msgstr "Vermogen"
 
-#: src/geo_activity_playground/features/activity/blueprint.py:745
+#: src/geo_activity_playground/features/activity/blueprint.py:728
 msgid "Power / W"
 msgstr "Vermogen / W"
 
-#: src/geo_activity_playground/features/activity/blueprint.py:754
+#: src/geo_activity_playground/features/activity/blueprint.py:737
 msgid "Heart Rate Zones"
 msgstr "Hartslagzones"
 
-#: src/geo_activity_playground/features/activity/blueprint.py:758
-#: src/geo_activity_playground/features/activity/blueprint.py:759
+#: src/geo_activity_playground/features/activity/blueprint.py:741
+#: src/geo_activity_playground/features/activity/blueprint.py:742
 msgid "Zone"
 msgstr "Zone"
 
-#: src/geo_activity_playground/features/activity/blueprint.py:766
+#: src/geo_activity_playground/features/activity/blueprint.py:749
 msgid "Repetitions"
 msgstr "Herhalingen"
 
-#: src/geo_activity_playground/features/activity/blueprint.py:769
+#: src/geo_activity_playground/features/activity/blueprint.py:752
 #: src/geo_activity_playground/features/activity/templates/activity/name.html.j2:63
 #: src/geo_activity_playground/features/activity/templates/activity/show.html.j2:570
 #: src/geo_activity_playground/features/bubble_chart/blueprint.py:83
@@ -232,14 +233,18 @@ msgstr "Herhalingen"
 #: src/geo_activity_playground/features/maintenance/templates/maintenance/task_execution_new.html.j2:16
 #: src/geo_activity_playground/features/plot_builder/analysis.py:21
 #: src/geo_activity_playground/features/segments/templates/segments/show.html.j2:60
+#: src/geo_activity_playground/features/similar_routes/blueprint.py:175
+#: src/geo_activity_playground/features/similar_routes/blueprint.py:182
+#: src/geo_activity_playground/features/similar_routes/blueprint.py:194
+#: src/geo_activity_playground/features/similar_routes/templates/similar_routes/cluster.html.j2:53
 #: src/geo_activity_playground/webui/blueprints/entry_views.py:116
 #: src/geo_activity_playground/webui/blueprints/entry_views.py:120
 #: src/geo_activity_playground/webui/templates/search/index.html.j2:54
 msgid "Date"
 msgstr "Datum"
 
-#: src/geo_activity_playground/features/activity/blueprint.py:776
-#: src/geo_activity_playground/features/activity/blueprint.py:779
+#: src/geo_activity_playground/features/activity/blueprint.py:759
+#: src/geo_activity_playground/features/activity/blueprint.py:762
 #: src/geo_activity_playground/features/activity/templates/activity/bulk-edit.html.j2:73
 #: src/geo_activity_playground/features/activity/templates/activity/edit.html.j2:42
 #: src/geo_activity_playground/features/activity/templates/activity/name.html.j2:67
@@ -267,23 +272,24 @@ msgstr "Datum"
 #: src/geo_activity_playground/features/plot_builder/analysis.py:41
 #: src/geo_activity_playground/features/plot_builder/analysis.py:58
 #: src/geo_activity_playground/features/segments/templates/segments/show.html.j2:67
+#: src/geo_activity_playground/features/similar_routes/templates/similar_routes/cluster.html.j2:60
 #: src/geo_activity_playground/webui/columns.py:116
-#: src/geo_activity_playground/webui/templates/home.html.j2:98
-#: src/geo_activity_playground/webui/templates/page.html.j2:97
+#: src/geo_activity_playground/webui/templates/home.html.j2:95
+#: src/geo_activity_playground/webui/templates/page.html.j2:98
 #: src/geo_activity_playground/webui/templates/search/index.html.j2:58
 #: src/geo_activity_playground/webui/templates/search_form.html.j2:86
 msgid "Equipment"
 msgstr "Uitrusting"
 
-#: src/geo_activity_playground/features/activity/blueprint.py:779
-#: src/geo_activity_playground/features/activity/blueprint.py:790
-#: src/geo_activity_playground/features/activity/blueprint.py:802
+#: src/geo_activity_playground/features/activity/blueprint.py:762
+#: src/geo_activity_playground/features/activity/blueprint.py:773
+#: src/geo_activity_playground/features/activity/blueprint.py:785
 #: src/geo_activity_playground/features/eddington/templates/eddington/index.html.j2:53
 #: src/geo_activity_playground/features/eddington/templates/eddington/index.html.j2:124
 msgid "Count"
 msgstr "Aantal"
 
-#: src/geo_activity_playground/features/activity/blueprint.py:798
+#: src/geo_activity_playground/features/activity/blueprint.py:781
 #: src/geo_activity_playground/features/activity/templates/activity/name.html.j2:65
 #: src/geo_activity_playground/features/activity/templates/activity/show.html.j2:572
 #: src/geo_activity_playground/features/calendar/templates/calendar/day.html.j2:46
@@ -292,7 +298,7 @@ msgstr "Aantal"
 msgid "Elapsed time"
 msgstr "Verstreken tijd"
 
-#: src/geo_activity_playground/features/activity/blueprint.py:801
+#: src/geo_activity_playground/features/activity/blueprint.py:784
 msgid "Time / min"
 msgstr "Tijd / min"
 
@@ -340,6 +346,7 @@ msgstr "Alle velden"
 #: src/geo_activity_playground/features/equipment/templates/equipment/edit.html.j2:25
 #: src/geo_activity_playground/features/explorer/templates/explorer/activities_through_tile.html.j2:34
 #: src/geo_activity_playground/features/explorer/templates/explorer/server-side.html.j2:107
+#: src/geo_activity_playground/features/similar_routes/blueprint.py:174
 #: src/geo_activity_playground/features/square_planner/templates/square_planner/index.html.j2:124
 #: src/geo_activity_playground/features/square_planner/templates/square_planner/index.html.j2:125
 #: src/geo_activity_playground/features/square_planner/templates/square_planner/index.html.j2:140
@@ -382,6 +389,9 @@ msgstr ""
 #: src/geo_activity_playground/features/equipment/blueprint.py:300
 #: src/geo_activity_playground/features/explorer/templates/explorer/activities_through_tile.html.j2:40
 #: src/geo_activity_playground/features/segments/templates/segments/show.html.j2:68
+#: src/geo_activity_playground/features/similar_routes/blueprint.py:188
+#: src/geo_activity_playground/features/similar_routes/blueprint.py:200
+#: src/geo_activity_playground/features/similar_routes/templates/similar_routes/cluster.html.j2:59
 #: src/geo_activity_playground/features/summary/plots.py:25
 #: src/geo_activity_playground/features/summary/plots.py:28
 #: src/geo_activity_playground/webui/blueprints/entry_views.py:118
@@ -521,8 +531,8 @@ msgstr ""
 #: src/geo_activity_playground/features/bubble_chart/blueprint.py:129
 #: src/geo_activity_playground/features/bubble_chart/blueprint.py:137
 #: src/geo_activity_playground/features/bubble_chart/templates/bubble_chart/index.html.j2:18
-#: src/geo_activity_playground/features/calendar/blueprint.py:176
-#: src/geo_activity_playground/features/calendar/blueprint.py:239
+#: src/geo_activity_playground/features/calendar/blueprint.py:177
+#: src/geo_activity_playground/features/calendar/blueprint.py:240
 #: src/geo_activity_playground/features/calendar/templates/calendar/day.html.j2:38
 #: src/geo_activity_playground/features/calendar/templates/calendar/wrap-month.html.j2:42
 #: src/geo_activity_playground/features/calendar/templates/calendar/wrap-month.html.j2:182
@@ -644,90 +654,103 @@ msgstr ""
 msgid "Progress marker mode"
 msgstr ""
 
-#: src/geo_activity_playground/features/activity/templates/activity/show.html.j2:345
-#: src/geo_activity_playground/features/activity/templates/activity/show.html.j2:346
+#: src/geo_activity_playground/features/activity/templates/activity/show.html.j2:342
+#: src/geo_activity_playground/features/activity/templates/activity/show.html.j2:343
 msgid "Line Color by"
 msgstr ""
 
-#: src/geo_activity_playground/features/activity/templates/activity/show.html.j2:352
+#: src/geo_activity_playground/features/activity/templates/activity/show.html.j2:349
 msgid "None (solid color)"
 msgstr ""
 
-#: src/geo_activity_playground/features/activity/templates/activity/show.html.j2:360
+#: src/geo_activity_playground/features/activity/templates/activity/show.html.j2:357
 #: src/geo_activity_playground/features/maintenance/templates/maintenance/action_edit.html.j2:47
 msgid "Photos"
 msgstr ""
 
-#: src/geo_activity_playground/features/activity/templates/activity/show.html.j2:373
+#: src/geo_activity_playground/features/activity/templates/activity/show.html.j2:370
 msgid "Matched Segments"
 msgstr ""
 
-#: src/geo_activity_playground/features/activity/templates/activity/show.html.j2:378
+#: src/geo_activity_playground/features/activity/templates/activity/show.html.j2:375
 #: src/geo_activity_playground/features/segments/templates/segments/index.html.j2:49
 msgid "Segment Name"
 msgstr ""
 
-#: src/geo_activity_playground/features/activity/templates/activity/show.html.j2:379
+#: src/geo_activity_playground/features/activity/templates/activity/show.html.j2:376
 msgid "Duration in Segment"
 msgstr ""
 
-#: src/geo_activity_playground/features/activity/templates/activity/show.html.j2:398
+#: src/geo_activity_playground/features/activity/templates/activity/show.html.j2:395
 msgid "Distance & speed"
 msgstr ""
 
-#: src/geo_activity_playground/features/activity/templates/activity/show.html.j2:444
+#: src/geo_activity_playground/features/activity/templates/activity/show.html.j2:441
 msgid ""
 "Your activity has heart data, but this program doesn't know your maximum "
 "heart rate (or birth year) and therefore cannot compute the heart rate "
 "zones. Go to the"
 msgstr ""
 
-#: src/geo_activity_playground/features/activity/templates/activity/show.html.j2:445
+#: src/geo_activity_playground/features/activity/templates/activity/show.html.j2:442
 msgid "settings"
 msgstr ""
 
-#: src/geo_activity_playground/features/activity/templates/activity/show.html.j2:472
+#: src/geo_activity_playground/features/activity/templates/activity/show.html.j2:469
 #: src/geo_activity_playground/features/calendar/templates/calendar/day.html.j2:83
 msgid "Share picture"
 msgstr ""
 
-#: src/geo_activity_playground/features/activity/templates/activity/show.html.j2:476
+#: src/geo_activity_playground/features/activity/templates/activity/show.html.j2:473
 msgid "Not happy with the displayed data?"
 msgstr ""
 
-#: src/geo_activity_playground/features/activity/templates/activity/show.html.j2:476
+#: src/geo_activity_playground/features/activity/templates/activity/show.html.j2:473
 msgid "Change share picture settings"
 msgstr ""
 
-#: src/geo_activity_playground/features/activity/templates/activity/show.html.j2:479
+#: src/geo_activity_playground/features/activity/templates/activity/show.html.j2:476
 msgid "New explorer tiles"
 msgstr ""
 
-#: src/geo_activity_playground/features/activity/templates/activity/show.html.j2:480
+#: src/geo_activity_playground/features/activity/templates/activity/show.html.j2:477
 msgid ""
 "The following maps show what this activity changed on the respective zoom"
 " levels: which tiles you discovered and which tiles became part of a "
 "cluster."
 msgstr ""
 
-#: src/geo_activity_playground/features/activity/templates/activity/show.html.j2:485
+#: src/geo_activity_playground/features/activity/templates/activity/show.html.j2:482
 #: src/geo_activity_playground/features/calendar/templates/calendar/wrap-month.html.j2:105
 #: src/geo_activity_playground/features/calendar/templates/calendar/wrap-year.html.j2:99
 #: src/geo_activity_playground/features/square_planner/templates/square_planner/index.html.j2:141
 msgid "Zoom"
 msgstr ""
 
-#: src/geo_activity_playground/features/activity/templates/activity/show.html.j2:494
+#: src/geo_activity_playground/features/activity/templates/activity/show.html.j2:491
 msgid "Newly discovered"
 msgstr ""
 
-#: src/geo_activity_playground/features/activity/templates/activity/show.html.j2:499
+#: src/geo_activity_playground/features/activity/templates/activity/show.html.j2:496
 msgid "Joined a cluster"
 msgstr ""
 
-#: src/geo_activity_playground/features/activity/templates/activity/show.html.j2:504
+#: src/geo_activity_playground/features/activity/templates/activity/show.html.j2:501
 msgid "Discovered and joined a cluster"
 msgstr ""
+
+#: src/geo_activity_playground/features/activity/templates/activity/show.html.j2:553
+#: src/geo_activity_playground/features/similar_routes/templates/similar_routes/activity.html.j2:4
+msgid "Similar routes"
+msgstr "Vergelijkbare routes"
+
+#: src/geo_activity_playground/features/activity/templates/activity/show.html.j2:555
+msgid "Activities along a similar route"
+msgstr "Activiteiten langs een vergelijkbare route"
+
+#: src/geo_activity_playground/features/activity/templates/activity/show.html.j2:556
+msgid "Route cluster of this activity"
+msgstr "Routecluster van deze activiteit"
 
 #: src/geo_activity_playground/features/activity/templates/activity/show.html.j2:562
 msgid "Activities with the same name"
@@ -750,7 +773,7 @@ msgid "End"
 msgstr ""
 
 #: src/geo_activity_playground/features/activity_photos/templates/photo/map.html.j2:4
-#: src/geo_activity_playground/webui/templates/page.html.j2:78
+#: src/geo_activity_playground/webui/templates/page.html.j2:79
 msgid "Photo Map"
 msgstr "Fotokaart"
 
@@ -811,6 +834,7 @@ msgstr "%(display_name)s per activiteit (bellengrafiek)"
 #: src/geo_activity_playground/features/bubble_chart/blueprint.py:93
 #: src/geo_activity_playground/features/bubble_chart/blueprint.py:101
 #: src/geo_activity_playground/features/segments/templates/segments/show.html.j2:61
+#: src/geo_activity_playground/features/similar_routes/templates/similar_routes/cluster.html.j2:54
 #: src/geo_activity_playground/webui/templates/settings/excluded-activities.html.j2:22
 msgid "Activity"
 msgstr "Activiteit"
@@ -844,85 +868,85 @@ msgstr ""
 msgid "Each bubble represents one day. Click a bubble to open the day overview."
 msgstr ""
 
-#: src/geo_activity_playground/features/calendar/blueprint.py:168
+#: src/geo_activity_playground/features/calendar/blueprint.py:169
 msgid "Monthly Distance and New Tiles"
 msgstr "Maandelijkse afstand en nieuwe tegels"
 
-#: src/geo_activity_playground/features/calendar/blueprint.py:170
-#: src/geo_activity_playground/features/calendar/blueprint.py:174
-#: src/geo_activity_playground/features/calendar/blueprint.py:189
+#: src/geo_activity_playground/features/calendar/blueprint.py:171
+#: src/geo_activity_playground/features/calendar/blueprint.py:175
+#: src/geo_activity_playground/features/calendar/blueprint.py:190
 #: src/geo_activity_playground/features/calendar/templates/calendar/wrap-year.html.j2:183
 #: src/geo_activity_playground/features/equipment/blueprint.py:375
 #: src/geo_activity_playground/features/plot_builder/analysis.py:50
 msgid "Month"
 msgstr "Maand"
 
-#: src/geo_activity_playground/features/calendar/blueprint.py:177
-#: src/geo_activity_playground/features/calendar/blueprint.py:190
-#: src/geo_activity_playground/features/calendar/blueprint.py:240
-#: src/geo_activity_playground/features/calendar/blueprint.py:253
+#: src/geo_activity_playground/features/calendar/blueprint.py:178
+#: src/geo_activity_playground/features/calendar/blueprint.py:191
+#: src/geo_activity_playground/features/calendar/blueprint.py:241
+#: src/geo_activity_playground/features/calendar/blueprint.py:254
 #: src/geo_activity_playground/features/calendar/templates/calendar/wrap-month.html.j2:106
 #: src/geo_activity_playground/features/calendar/templates/calendar/wrap-year.html.j2:100
 msgid "New tiles"
 msgstr "Nieuwe tegels"
 
-#: src/geo_activity_playground/features/calendar/blueprint.py:178
-#: src/geo_activity_playground/features/calendar/blueprint.py:241
+#: src/geo_activity_playground/features/calendar/blueprint.py:179
+#: src/geo_activity_playground/features/calendar/blueprint.py:242
 #: src/geo_activity_playground/features/calendar/templates/calendar/wrap-month.html.j2:107
 #: src/geo_activity_playground/features/calendar/templates/calendar/wrap-year.html.j2:101
 msgid "New cluster tiles"
 msgstr "Nieuwe clustertegels"
 
-#: src/geo_activity_playground/features/calendar/blueprint.py:179
-#: src/geo_activity_playground/features/calendar/blueprint.py:242
+#: src/geo_activity_playground/features/calendar/blueprint.py:180
+#: src/geo_activity_playground/features/calendar/blueprint.py:243
 msgid "Square size"
 msgstr "Vierkantgrootte"
 
-#: src/geo_activity_playground/features/calendar/blueprint.py:197
-#: src/geo_activity_playground/features/calendar/blueprint.py:260
+#: src/geo_activity_playground/features/calendar/blueprint.py:198
+#: src/geo_activity_playground/features/calendar/blueprint.py:261
 msgid "Tile type"
 msgstr "Tegeltype"
 
-#: src/geo_activity_playground/features/calendar/blueprint.py:212
+#: src/geo_activity_playground/features/calendar/blueprint.py:213
 #: src/geo_activity_playground/features/equipment/blueprint.py:257
 msgid "Unknown"
 msgstr "Onbekend"
 
-#: src/geo_activity_playground/features/calendar/blueprint.py:219
-#: src/geo_activity_playground/features/calendar/blueprint.py:221
+#: src/geo_activity_playground/features/calendar/blueprint.py:220
+#: src/geo_activity_playground/features/calendar/blueprint.py:222
 msgid "Category"
 msgstr "Categorie"
 
-#: src/geo_activity_playground/features/calendar/blueprint.py:231
+#: src/geo_activity_playground/features/calendar/blueprint.py:232
 msgid "Daily Distance and New Tiles"
 msgstr "Dagelijkse afstand en nieuwe tegels"
 
-#: src/geo_activity_playground/features/calendar/blueprint.py:233
-#: src/geo_activity_playground/features/calendar/blueprint.py:237
-#: src/geo_activity_playground/features/calendar/blueprint.py:252
+#: src/geo_activity_playground/features/calendar/blueprint.py:234
+#: src/geo_activity_playground/features/calendar/blueprint.py:238
+#: src/geo_activity_playground/features/calendar/blueprint.py:253
 #: src/geo_activity_playground/features/calendar/templates/calendar/wrap-month.html.j2:181
 msgid "Day"
 msgstr "Dag"
 
-#: src/geo_activity_playground/features/calendar/blueprint.py:284
+#: src/geo_activity_playground/features/calendar/blueprint.py:285
 msgid "Longest distance"
 msgstr "Langste afstand"
 
-#: src/geo_activity_playground/features/calendar/blueprint.py:285
+#: src/geo_activity_playground/features/calendar/blueprint.py:286
 msgid "Longest time"
 msgstr "Langste tijd"
 
-#: src/geo_activity_playground/features/calendar/blueprint.py:286
+#: src/geo_activity_playground/features/calendar/blueprint.py:287
 msgid "Most new tiles"
 msgstr "Meeste nieuwe tegels"
 
-#: src/geo_activity_playground/features/calendar/blueprint.py:604
-#: src/geo_activity_playground/features/calendar/blueprint.py:740
+#: src/geo_activity_playground/features/calendar/blueprint.py:597
+#: src/geo_activity_playground/features/calendar/blueprint.py:733
 msgid "Distance by Kind"
 msgstr "Afstand per type"
 
-#: src/geo_activity_playground/features/calendar/blueprint.py:606
-#: src/geo_activity_playground/features/calendar/blueprint.py:742
+#: src/geo_activity_playground/features/calendar/blueprint.py:599
+#: src/geo_activity_playground/features/calendar/blueprint.py:735
 msgid "Distance by Equipment"
 msgstr "Afstand per uitrusting"
 
@@ -1251,7 +1275,7 @@ msgid "Kinds"
 msgstr "Typen"
 
 #: src/geo_activity_playground/features/equipment/blueprint.py:372
-#: src/geo_activity_playground/features/equipment/templates/equipment/index.html.j2:39
+#: src/geo_activity_playground/features/equipment/templates/equipment/index.html.j2:42
 msgid "Monthly Equipment Usage"
 msgstr "Maandelijks uitrustingsgebruik"
 
@@ -1325,16 +1349,16 @@ msgstr ""
 msgid "Are you sure you want to delete this equipment?"
 msgstr ""
 
-#: src/geo_activity_playground/features/equipment/templates/equipment/index.html.j2:27
+#: src/geo_activity_playground/features/equipment/templates/equipment/index.html.j2:30
 #: src/geo_activity_playground/features/equipment/templates/equipment/show.html.j2:29
 msgid "Usage"
 msgstr ""
 
-#: src/geo_activity_playground/features/equipment/templates/equipment/index.html.j2:28
+#: src/geo_activity_playground/features/equipment/templates/equipment/index.html.j2:31
 msgid "First use"
 msgstr ""
 
-#: src/geo_activity_playground/features/equipment/templates/equipment/index.html.j2:29
+#: src/geo_activity_playground/features/equipment/templates/equipment/index.html.j2:32
 msgid "Last use"
 msgstr ""
 
@@ -1760,7 +1784,7 @@ msgid "Generate explorer MP4"
 msgstr ""
 
 #: src/geo_activity_playground/features/hall_of_fame/templates/hall_of_fame/index.html.j2:5
-#: src/geo_activity_playground/webui/templates/page.html.j2:88
+#: src/geo_activity_playground/webui/templates/page.html.j2:89
 msgid "Hall of Fame"
 msgstr ""
 
@@ -1803,7 +1827,7 @@ msgid "Deleted search query #%d"
 msgstr "Zoekopdracht #%d verwijderd"
 
 #: src/geo_activity_playground/features/heatmap/templates/heatmap/index.html.j2:4
-#: src/geo_activity_playground/webui/templates/page.html.j2:77
+#: src/geo_activity_playground/webui/templates/page.html.j2:78
 msgid "Heatmap"
 msgstr "Heatmap"
 
@@ -2019,7 +2043,7 @@ msgid "Delete this photo?"
 msgstr ""
 
 #: src/geo_activity_playground/features/maintenance/templates/maintenance/index.html.j2:4
-#: src/geo_activity_playground/webui/templates/page.html.j2:98
+#: src/geo_activity_playground/webui/templates/page.html.j2:99
 msgid "Maintenance"
 msgstr "Onderhoud"
 
@@ -2227,6 +2251,7 @@ msgstr "Duur / s"
 #: src/geo_activity_playground/features/segments/analysis.py:76
 #: src/geo_activity_playground/features/segments/analysis.py:78
 #: src/geo_activity_playground/features/segments/templates/segments/show.html.j2:62
+#: src/geo_activity_playground/features/similar_routes/templates/similar_routes/activity.html.j2:23
 #: src/geo_activity_playground/webui/columns.py:110
 msgid "Direction"
 msgstr "Richting"
@@ -2313,12 +2338,117 @@ msgid "Matched activities"
 msgstr ""
 
 #: src/geo_activity_playground/features/segments/templates/segments/show.html.j2:65
+#: src/geo_activity_playground/features/similar_routes/templates/similar_routes/cluster.html.j2:58
 msgid "Avg. Speed / km/h"
 msgstr ""
 
 #: src/geo_activity_playground/features/segments/templates/segments/show.html.j2:66
 msgid "Avg. Power / W"
 msgstr ""
+
+#: src/geo_activity_playground/features/similar_routes/blueprint.py:50
+msgid "Either lies on the other"
+msgstr "Een van beide ligt op de andere"
+
+#: src/geo_activity_playground/features/similar_routes/blueprint.py:51
+msgid "Both lie on each other"
+msgstr "Beide liggen op elkaar"
+
+#: src/geo_activity_playground/features/similar_routes/blueprint.py:52
+msgid "This lies on the other"
+msgstr "Deze ligt op de andere"
+
+#: src/geo_activity_playground/features/similar_routes/blueprint.py:53
+msgid "The other lies on this"
+msgstr "De andere ligt op deze"
+
+#: src/geo_activity_playground/features/similar_routes/blueprint.py:176
+#: src/geo_activity_playground/features/similar_routes/blueprint.py:185
+msgid "Average speed / km/h"
+msgstr "Gemiddelde snelheid / km/h"
+
+#: src/geo_activity_playground/features/similar_routes/blueprint.py:177
+#: src/geo_activity_playground/features/similar_routes/blueprint.py:197
+msgid "Moving time / min"
+msgstr "Bewegingstijd / min"
+
+#: src/geo_activity_playground/features/similar_routes/blueprint.py:180
+msgid "Average speed"
+msgstr "Gemiddelde snelheid"
+
+#: src/geo_activity_playground/features/similar_routes/blueprint.py:192
+#: src/geo_activity_playground/features/similar_routes/templates/similar_routes/cluster.html.j2:57
+msgid "Moving time"
+msgstr "Bewegingstijd"
+
+#: src/geo_activity_playground/features/similar_routes/templates/similar_routes/activity.html.j2:7
+msgid "Activities whose tracks are close to"
+msgstr "Activiteiten waarvan de routes dicht liggen bij"
+
+#: src/geo_activity_playground/features/similar_routes/templates/similar_routes/activity.html.j2:9
+#, python-format
+msgid "Compared with %(num_compared)d of %(num_others)d other activities so far."
+msgstr ""
+"Tot nu toe vergeleken met %(num_compared)d van %(num_others)d andere "
+"activiteiten."
+
+#: src/geo_activity_playground/features/similar_routes/templates/similar_routes/activity.html.j2:14
+#: src/geo_activity_playground/features/similar_routes/templates/similar_routes/cluster-macros.html.j2:4
+msgid "Quantile"
+msgstr "Kwantiel"
+
+#: src/geo_activity_playground/features/similar_routes/templates/similar_routes/activity.html.j2:35
+#: src/geo_activity_playground/features/similar_routes/templates/similar_routes/cluster-macros.html.j2:14
+msgid "Maximum distance / m"
+msgstr "Maximale afstand / m"
+
+#: src/geo_activity_playground/features/similar_routes/templates/similar_routes/activity.html.j2:42
+#: src/geo_activity_playground/features/similar_routes/templates/similar_routes/cluster-macros.html.j2:21
+msgid "Apply"
+msgstr "Toepassen"
+
+#: src/geo_activity_playground/features/similar_routes/templates/similar_routes/activity.html.j2:70
+msgid "No similar routes found within this distance."
+msgstr "Geen vergelijkbare routes gevonden binnen deze afstand."
+
+#: src/geo_activity_playground/features/similar_routes/templates/similar_routes/cluster.html.j2:8
+#: src/geo_activity_playground/features/similar_routes/templates/similar_routes/clusters.html.j2:5
+msgid "Route clusters"
+msgstr "Routeclusters"
+
+#: src/geo_activity_playground/features/similar_routes/templates/similar_routes/cluster.html.j2:14
+msgid "Route cluster"
+msgstr "Routecluster"
+
+#: src/geo_activity_playground/features/similar_routes/templates/similar_routes/cluster.html.j2:20
+#, python-format
+msgid "%(num)d activities around"
+msgstr "%(num)d activiteiten rond"
+
+#: src/geo_activity_playground/features/similar_routes/templates/similar_routes/cluster.html.j2:55
+msgid "Distance to center / m"
+msgstr "Afstand tot het centrum / m"
+
+#: src/geo_activity_playground/features/similar_routes/templates/similar_routes/cluster.html.j2:80
+msgid "This activity is not part of a route cluster with these parameters."
+msgstr "Deze activiteit hoort met deze parameters bij geen routecluster."
+
+#: src/geo_activity_playground/features/similar_routes/templates/similar_routes/clusters.html.j2:8
+msgid ""
+"Activities are grouped around a central activity. Every member and the "
+"center lie on each other within the maximum distance."
+msgstr ""
+"Activiteiten worden rond een centrale activiteit gegroepeerd. Elk lid en "
+"het centrum liggen binnen de maximale afstand op elkaar."
+
+#: src/geo_activity_playground/features/similar_routes/templates/similar_routes/clusters.html.j2:28
+#, python-format
+msgid "%(num)d activities"
+msgstr "%(num)d activiteiten"
+
+#: src/geo_activity_playground/features/similar_routes/templates/similar_routes/clusters.html.j2:40
+msgid "No route clusters found within this distance."
+msgstr "Binnen deze afstand zijn geen routeclusters gevonden."
 
 #: src/geo_activity_playground/features/square_planner/templates/square_planner/index.html.j2:6
 msgid "Square Planner"
@@ -2329,7 +2459,7 @@ msgid "Download missing tiles as"
 msgstr ""
 
 #: src/geo_activity_playground/features/square_planner/templates/square_planner/index.html.j2:94
-#: src/geo_activity_playground/webui/templates/home.html.j2:143
+#: src/geo_activity_playground/webui/templates/home.html.j2:140
 msgid "or"
 msgstr "of"
 
@@ -2406,7 +2536,7 @@ msgid "ISO Weekday"
 msgstr "ISO-weekdag"
 
 #: src/geo_activity_playground/features/summary/templates/summary/index.html.j2:7
-#: src/geo_activity_playground/webui/templates/page.html.j2:85
+#: src/geo_activity_playground/webui/templates/page.html.j2:86
 msgid "Summary Statistics"
 msgstr ""
 
@@ -2542,17 +2672,29 @@ msgstr "Gemiddelde snelheid"
 msgid "Average Power"
 msgstr "Gemiddeld vermogen"
 
-#: src/geo_activity_playground/webui/period_stats.py:30
+#: src/geo_activity_playground/webui/period_stats.py:29
 msgid "This week"
 msgstr ""
 
-#: src/geo_activity_playground/webui/period_stats.py:31
+#: src/geo_activity_playground/webui/period_stats.py:30
+msgid "Last week"
+msgstr "Vorige week"
+
+#: src/geo_activity_playground/webui/period_stats.py:34
 msgid "This month"
 msgstr ""
 
-#: src/geo_activity_playground/webui/period_stats.py:32
+#: src/geo_activity_playground/webui/period_stats.py:34
+msgid "Last month"
+msgstr "Vorige maand"
+
+#: src/geo_activity_playground/webui/period_stats.py:36
 msgid "This year"
 msgstr ""
+
+#: src/geo_activity_playground/webui/period_stats.py:37
+msgid "Last year"
+msgstr "Vorig jaar"
 
 #: src/geo_activity_playground/webui/blueprints/settings_blueprint.py:119
 msgid "No geospatial data"
@@ -2871,40 +3013,40 @@ msgstr "Openstaande onderhoudstaken"
 msgid "Totals"
 msgstr ""
 
-#: src/geo_activity_playground/webui/templates/home.html.j2:79
+#: src/geo_activity_playground/webui/templates/home.html.j2:76
 msgid "activities"
 msgstr ""
 
-#: src/geo_activity_playground/webui/templates/home.html.j2:81
+#: src/geo_activity_playground/webui/templates/home.html.j2:78
 msgid "up"
 msgstr ""
 
-#: src/geo_activity_playground/webui/templates/home.html.j2:90
+#: src/geo_activity_playground/webui/templates/home.html.j2:87
 msgid "Year over year"
 msgstr ""
 
-#: src/geo_activity_playground/webui/templates/home.html.j2:123
+#: src/geo_activity_playground/webui/templates/home.html.j2:120
 msgid "Recent highlights"
 msgstr ""
 
-#: src/geo_activity_playground/webui/templates/home.html.j2:124
+#: src/geo_activity_playground/webui/templates/home.html.j2:121
 msgid "Best of the last 90 days."
 msgstr ""
 
-#: src/geo_activity_playground/webui/templates/home.html.j2:142
+#: src/geo_activity_playground/webui/templates/home.html.j2:139
 msgid "You don't have activities yet. Either put some files into a directory"
 msgstr "Je hebt nog geen activiteiten. Plaats bestanden in een map"
 
-#: src/geo_activity_playground/webui/templates/home.html.j2:143
+#: src/geo_activity_playground/webui/templates/home.html.j2:140
 msgid "upload activities"
 msgstr "upload activiteiten"
 
-#: src/geo_activity_playground/webui/templates/home.html.j2:144
+#: src/geo_activity_playground/webui/templates/home.html.j2:141
 msgid "set up Strava API"
 msgstr "stel Strava API in"
 
 #: src/geo_activity_playground/webui/templates/page.html.j2:12
-#: src/geo_activity_playground/webui/templates/page.html.j2:128
+#: src/geo_activity_playground/webui/templates/page.html.j2:129
 msgid "Geo Activity Playground"
 msgstr "Geo Activity Playground"
 
@@ -2925,89 +3067,93 @@ msgstr ""
 msgid "Bubble Chart"
 msgstr ""
 
-#: src/geo_activity_playground/webui/templates/page.html.j2:67
+#: src/geo_activity_playground/webui/templates/page.html.j2:64
+msgid "Route Clusters"
+msgstr "Routeclusters"
+
+#: src/geo_activity_playground/webui/templates/page.html.j2:68
 msgid "Explorer"
 msgstr "Verkenner"
 
-#: src/geo_activity_playground/webui/templates/page.html.j2:71
+#: src/geo_activity_playground/webui/templates/page.html.j2:72
 msgid "Video Export"
 msgstr "Video-export"
 
-#: src/geo_activity_playground/webui/templates/page.html.j2:75
+#: src/geo_activity_playground/webui/templates/page.html.j2:76
 msgid "Maps"
 msgstr "Kaarten"
 
-#: src/geo_activity_playground/webui/templates/page.html.j2:82
+#: src/geo_activity_playground/webui/templates/page.html.j2:83
 msgid "Statistics"
 msgstr "Statistieken"
 
-#: src/geo_activity_playground/webui/templates/page.html.j2:86
+#: src/geo_activity_playground/webui/templates/page.html.j2:87
 msgid "Year & Month Wrap"
 msgstr "Jaar- & maandoverzicht"
 
-#: src/geo_activity_playground/webui/templates/page.html.j2:89
+#: src/geo_activity_playground/webui/templates/page.html.j2:90
 msgid "Eddington Number"
 msgstr ""
 
-#: src/geo_activity_playground/webui/templates/page.html.j2:90
+#: src/geo_activity_playground/webui/templates/page.html.j2:91
 msgid "Elevation Eddington Number"
 msgstr "Hoogte Eddington-getal"
 
-#: src/geo_activity_playground/webui/templates/page.html.j2:94
+#: src/geo_activity_playground/webui/templates/page.html.j2:95
 msgid "Gear"
 msgstr "Materiaal"
 
-#: src/geo_activity_playground/webui/templates/page.html.j2:102
+#: src/geo_activity_playground/webui/templates/page.html.j2:103
 msgid "Data"
 msgstr "Gegevens"
 
-#: src/geo_activity_playground/webui/templates/page.html.j2:104
+#: src/geo_activity_playground/webui/templates/page.html.j2:105
 msgid "Upload Activities"
 msgstr ""
 
-#: src/geo_activity_playground/webui/templates/page.html.j2:105
+#: src/geo_activity_playground/webui/templates/page.html.j2:106
 msgid "Upload Photos"
 msgstr "Upload foto's"
 
-#: src/geo_activity_playground/webui/templates/page.html.j2:106
+#: src/geo_activity_playground/webui/templates/page.html.j2:107
 msgid "Scan New Activities"
 msgstr ""
 
-#: src/geo_activity_playground/webui/templates/page.html.j2:108
+#: src/geo_activity_playground/webui/templates/page.html.j2:109
 msgid "Data Export"
 msgstr "Gegevens exporteren"
 
-#: src/geo_activity_playground/webui/templates/page.html.j2:112
+#: src/geo_activity_playground/webui/templates/page.html.j2:113
 #: src/geo_activity_playground/webui/templates/settings/base.html.j2:84
 #: src/geo_activity_playground/webui/templates/settings/index.html.j2:8
 msgid "Settings"
 msgstr "Instellingen"
 
-#: src/geo_activity_playground/webui/templates/page.html.j2:131
+#: src/geo_activity_playground/webui/templates/page.html.j2:132
 msgid "Toggle navigation"
 msgstr "Navigatie wisselen"
 
-#: src/geo_activity_playground/webui/templates/page.html.j2:192
+#: src/geo_activity_playground/webui/templates/page.html.j2:193
 msgid "Toggle theme"
 msgstr "Thema wisselen"
 
-#: src/geo_activity_playground/webui/templates/page.html.j2:193
+#: src/geo_activity_playground/webui/templates/page.html.j2:194
 msgid "Theme"
 msgstr "Thema"
 
-#: src/geo_activity_playground/webui/templates/page.html.j2:199
+#: src/geo_activity_playground/webui/templates/page.html.j2:200
 msgid "Light"
 msgstr "Licht"
 
-#: src/geo_activity_playground/webui/templates/page.html.j2:205
+#: src/geo_activity_playground/webui/templates/page.html.j2:206
 msgid "Dark"
 msgstr "Donker"
 
-#: src/geo_activity_playground/webui/templates/page.html.j2:211
+#: src/geo_activity_playground/webui/templates/page.html.j2:212
 msgid "Auto"
 msgstr "Automatisch"
 
-#: src/geo_activity_playground/webui/templates/page.html.j2:219
+#: src/geo_activity_playground/webui/templates/page.html.j2:220
 msgid ""
 "Are you sure you want to shut down the server? This will terminate the "
 "application."
@@ -3015,28 +3161,28 @@ msgstr ""
 "Weet je zeker dat je de server wilt afsluiten? Dit beëindigt de "
 "applicatie."
 
-#: src/geo_activity_playground/webui/templates/page.html.j2:221
+#: src/geo_activity_playground/webui/templates/page.html.j2:222
 msgid "Shutdown Server"
 msgstr "Server afsluiten"
 
-#: src/geo_activity_playground/webui/templates/page.html.j2:232
+#: src/geo_activity_playground/webui/templates/page.html.j2:233
 #, python-format
 msgid "You previously used version %(old)s and are now on version %(new)s."
 msgstr "Je gebruikte eerder versie %(old)s, nu draait versie %(new)s."
 
-#: src/geo_activity_playground/webui/templates/page.html.j2:235
+#: src/geo_activity_playground/webui/templates/page.html.j2:236
 msgid "See the changelog."
 msgstr "Bekijk de changelog."
 
-#: src/geo_activity_playground/webui/templates/page.html.j2:236
+#: src/geo_activity_playground/webui/templates/page.html.j2:237
 msgid "Close"
 msgstr ""
 
-#: src/geo_activity_playground/webui/templates/page.html.j2:257
+#: src/geo_activity_playground/webui/templates/page.html.j2:258
 msgid "Version"
 msgstr "Versie"
 
-#: src/geo_activity_playground/webui/templates/page.html.j2:266
+#: src/geo_activity_playground/webui/templates/page.html.j2:267
 msgid "Documentation"
 msgstr "Documentatie"
 

@@ -26,6 +26,7 @@ from ...core.activities import (
     make_geojson_line_segments_with_columns,
     make_geojson_progress_markers_from_time_series,
     make_geojson_progress_markers_time_based,
+    make_track_feature,
 )
 from ...core.config import ConfigAccessor
 from ...core.datamodel import (
@@ -135,27 +136,18 @@ def make_activity_blueprint(
         cmap = matplotlib.colormaps["Dark2"]
         fc = geojson.FeatureCollection(
             features=[
-                geojson.Feature(
-                    geometry=geojson.MultiLineString(
-                        coordinates=[
-                            [
-                                [lon, lat]
-                                for lat, lon in zip(
-                                    group["latitude"], group["longitude"]
-                                )
-                            ]
-                            for _, group in apply_privacy_zones_to_tracks_if_enabled(
-                                get_time_series(activity.id), ui_config
-                            ).groupby("segment_id")
-                        ]
-                    ),
-                    properties={
-                        "color": matplotlib.colors.to_hex(cmap(i % 8)),
-                        "activity_name": activity.name,
-                        "activity_id": str(activity.id),
-                    },
-                )
+                feature
                 for i, activity in enumerate(iter_activities())
+                if (
+                    feature := make_track_feature(
+                        apply_privacy_zones_to_tracks_if_enabled(
+                            get_time_series(activity.id), ui_config
+                        ),
+                        color=matplotlib.colors.to_hex(cmap(i % 8)),
+                        activity_name=activity.name,
+                        activity_id=str(activity.id),
+                    )
+                )
             ]
         )
 
@@ -173,9 +165,7 @@ def make_activity_blueprint(
         time_series = apply_privacy_zones_to_tracks_if_enabled(
             get_time_series(id), config
         )
-        line_json = make_geojson_from_time_series(
-            time_series, config.eighth_marker_min_distance_km
-        )
+        line_json = make_geojson_from_time_series(time_series)
 
         meta = query_activity_meta()
         similar_activities = meta.loc[
@@ -305,8 +295,7 @@ def make_activity_blueprint(
         return make_geojson_from_time_series(
             apply_privacy_zones_to_tracks_if_enabled(
                 DB.session.get_one(Activity, id).time_series, ui_config
-            ),
-            ui_config.eighth_marker_min_distance_km,
+            )
         )
 
     @blueprint.route("/name/<name>")
@@ -326,21 +315,13 @@ def make_activity_blueprint(
         cmap = matplotlib.colormaps["Dark2"]
         fc = geojson.FeatureCollection(
             features=[
-                geojson.Feature(
-                    geometry=geojson.MultiLineString(
-                        coordinates=[
-                            [
-                                [lon, lat]
-                                for lat, lon in zip(
-                                    group["latitude"], group["longitude"]
-                                )
-                            ]
-                            for _, group in ts.groupby("segment_id")
-                        ]
-                    ),
-                    properties={"color": matplotlib.colors.to_hex(cmap(i % 8))},
-                )
+                feature
                 for i, ts in enumerate(time_series)
+                if (
+                    feature := make_track_feature(
+                        ts, color=matplotlib.colors.to_hex(cmap(i % 8))
+                    )
+                )
             ]
         )
 
@@ -400,7 +381,15 @@ def make_activity_blueprint(
 
             DB.session.commit()
             if start_changed:
-                refresh_tile_visits_for_activity(activity.id)
+                # The track is unchanged, so the tiles only move in time.
+                refresh_tile_visits_for_activity(
+                    activity.id,
+                    time_shift=(
+                        activity.start - previous_start
+                        if previous_start is not None
+                        else None
+                    ),
+                )
             return redirect(url_for(".show", id=activity.id))
 
         return render_template(
@@ -475,18 +464,9 @@ def make_activity_blueprint(
         begin = activity.index_begin or 0
         end = activity.index_end or num_points
 
+        track = make_track_feature(activity.raw_time_series)
         fc = geojson.FeatureCollection(
-            features=[
-                geojson.Feature(
-                    geometry=geojson.LineString(
-                        [
-                            (lon, lat)
-                            for lat, lon in zip(group["latitude"], group["longitude"])
-                        ]
-                    )
-                )
-                for _, group in activity.raw_time_series.groupby("segment_id")
-            ]
+            features=([track] if track else [])
             + [
                 geojson.Feature(
                     geometry=geojson.Point(
@@ -527,6 +507,9 @@ def make_activity_blueprint(
         if activity is None:
             abort(404)
         update_and_commit(activity, activity.raw_time_series, config, force=True)
+        # Enrichment can move the start time and the track, so the tiles of this
+        # one activity are derived again.
+        refresh_tile_visits_for_activity(activity.id)
         flash(_("Activity has been re-enriched."), category="success")
         return redirect(url_for(".show", id=id))
 

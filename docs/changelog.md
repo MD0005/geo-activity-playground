@@ -15,6 +15,21 @@ Types of changes
 
 <!-- next version below this line -->
 
+## Version 1.56.0 — 2026-09-27
+
+Added:
+
+- Browse clusters of activities along the same route. Each cluster shows all tracks on a map and plots speed and moving time over the date. ([GH-542](https://github.com/martin-ueding/geo-activity-playground/issues/542))
+
+Changed:
+
+- Update only the affected explorer tiles when you change an activity's start time or delete an activity. The tile history is no longer rebuilt from scratch.
+- Show the total distance of the full previous week, month and year on the home page instead of a percentage change. ([GH-520](https://github.com/martin-ueding/geo-activity-playground/issues/520))
+
+Fixed:
+
+- Remove the broken markers from the segment maps. Preview maps of activities no longer show progress markers. ([GH-542](https://github.com/martin-ueding/geo-activity-playground/issues/542))
+
 ## Version 1.55.0 — 2026-08-31
 
 Added:

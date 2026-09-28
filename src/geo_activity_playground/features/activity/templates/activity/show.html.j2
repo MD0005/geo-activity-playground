@@ -254,10 +254,7 @@
             }
 
             const trackLayer = L.geoJSON(trackGeojson, {
-                style: styleTrackFeature,
-                filter: function (feature) {
-                    return feature.geometry.type !== 'Point';
-                }
+                style: styleTrackFeature
             }).addTo(map);
             function makeMarkerLayer(geojson) {
                 return L.geoJSON(geojson, {
@@ -534,10 +531,7 @@
 
         // Add activity track
         L.geoJSON(trackGeojson, {
-            style: { color: "{{ activity_line_color }}" },
-            filter: function (feature) {
-                return feature.geometry.type !== 'Point';
-            }
+            style: { color: "{{ activity_line_color }}" }
         }).addTo(map);
 
         // The highlight layer is transparent apart from the tile borders, so it
@@ -555,6 +549,12 @@
     });
 </script>
 {% endif %}
+
+<h2>{{ _('Similar routes') }}</h2>
+<ul>
+    <li><a href="{{ url_for('similar_routes.activity', id=activity.id) }}">{{ _('Activities along a similar route') }}</a></li>
+    <li><a href="{{ url_for('similar_routes.cluster', id=activity.id) }}">{{ _('Route cluster of this activity') }}</a></li>
+</ul>
 
 {% if similar_activites|length > 0 %}
 <div class="row mb-3">
