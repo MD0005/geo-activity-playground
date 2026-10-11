@@ -85,8 +85,10 @@ from ...features.explorer.zoom_levels import (
 from ...features.hammerhead.blueprint import register_hammerhead_settings
 from ...features.heatmap.blueprint import register_heatmap_settings
 from ...features.heatmap.model import HeatmapTileCache
+from ...features.places.model import Place, Stay
 from ...features.plot_builder.model import PlotSpec
 from ...features.segments.model import Segment, SegmentCheck, SegmentMatch
+from ...features.sharepic.render import SHAREPIC_FIELDS
 from ...features.square_planner.model import SquarePlannerBookmark
 from ...features.strava.api_importer import refresh_activity_names_from_strava
 from ...features.strava.blueprint import register_strava_settings
@@ -127,7 +129,8 @@ def _import_exclusion_reasons() -> dict[str, str]:
 def _activity_source_labels() -> dict[str, str]:
     return {
         "directory": _("Directory / Manual Upload"),
-        "strava": _("Strava"),
+        "strava": _("Strava API"),
+        "strava_export": _("Strava Export"),
         "hammerhead": _("Hammerhead"),
     }
 
@@ -167,18 +170,6 @@ MATPLOTLIB_COLOR_SCHEMES_CONTINUOUS = [
     "plasma",
     "viridis",
 ]
-
-
-SHAREPIC_FIELDS = {
-    "calories": "Calories",
-    "distance_km": "Distance",
-    "elapsed_time": "Elapsed time",
-    "equipment": "Equipment",
-    "kind": "Kind",
-    "name": "Name",
-    "start": "Date",
-    "Steps": "Steps",
-}
 
 
 def int_or_none(s: str) -> int | None:
@@ -230,7 +221,9 @@ def _truncate_user_content_tables() -> None:
     DB.session.execute(sqlalchemy.delete(ClusterMembership))
     DB.session.execute(sqlalchemy.delete(FilteredClusterCache))
     DB.session.execute(sqlalchemy.delete(Photo))
+    DB.session.execute(sqlalchemy.delete(Stay))
     DB.session.execute(sqlalchemy.delete(Activity))
+    DB.session.execute(sqlalchemy.delete(Place))
     DB.session.execute(sqlalchemy.delete(Segment))
     DB.session.execute(sqlalchemy.delete(Tag))
     DB.session.execute(sqlalchemy.delete(ExplorerTileBookmark))
@@ -1234,7 +1227,7 @@ def make_settings_blueprint(
                 set(SHAREPIC_FIELDS) - set(names)
             )
             config_accessor.save()
-            flash("Updated sharepic preferences.", category="success")
+            flash(_("Updated sharepic preferences."), category="success")
         return render_template(
             "settings/sharepic.html.j2",
             names=[

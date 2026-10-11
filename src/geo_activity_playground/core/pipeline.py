@@ -51,6 +51,8 @@ def file_sha256(filename: pathlib.Path) -> str:
 def get_metadata_from_path(
     path: pathlib.Path, metadata_extraction_regexes: list[str]
 ) -> dict[str, str]:
+    if not path.is_relative_to(ACTIVITY_DIR):
+        return {}
     for regex in metadata_extraction_regexes:
         if m := re.search(regex, path.relative_to(ACTIVITY_DIR).as_posix()):
             return m.groupdict()
@@ -100,6 +102,11 @@ def stage_file_metadata(activity: Activity, parsed: Activity) -> None:
     activity.kind_from_file = parsed.kind.name if parsed.kind is not None else None
     if parsed.equipment is not None:
         activity.equipment_from_file = parsed.equipment.name
+    if parsed is not activity:
+        # The backrefs would otherwise keep the transient parse result in the
+        # collections of persistent kinds and equipments, and every flush warns.
+        parsed.kind = None
+        parsed.equipment = None
 
 
 def stage_path_metadata(activity: Activity, config: ActivityImportConfig) -> None:

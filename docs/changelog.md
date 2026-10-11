@@ -15,11 +15,35 @@ Types of changes
 
 <!-- next version below this line -->
 
+## Version 1.57.0 — 2026-10-11
+
+Added:
+
+- Show elevation gain, moving time and average speed on the share picture. More than four stats wrap into a second row. ([GH-525](https://github.com/martin-ueding/geo-activity-playground/issues/525))
+- Sort the similar routes of an activity by date, newest first. ([GH-524](https://github.com/martin-ueding/geo-activity-playground/issues/524))
+- Add places that activities start, end or stop at. Show the legs between them as a matrix and a map, and filter activities by place. ([GH-532](https://github.com/martin-ueding/geo-activity-playground/issues/532))
+
+Changed:
+
+- List only activities as similar routes whose tracks both lie on each other by default. Short trips no longer match every long route nearby. ([GH-524](https://github.com/martin-ueding/geo-activity-playground/issues/524))
+- Treat the Strava export and the Strava API as separate sources, each with its own duplicate matching priority. ([GH-521](https://github.com/martin-ueding/geo-activity-playground/issues/521))
+
+Fixed:
+
+- Keep the names and kinds from the `activities.csv` of the Strava export when re-parsing. The next scan repairs affected activities. ([GH-521](https://github.com/martin-ueding/geo-activity-playground/issues/521))
+- Take the step count of FIT files from the session summary instead of the last lap. Re-parse affected activities to correct their steps. ([GH-526](https://github.com/martin-ueding/geo-activity-playground/issues/526))
+- Stop zooming share pictures and similar route previews in to street level when privacy zones leave only a short piece of the track. ([GH-524](https://github.com/martin-ueding/geo-activity-playground/issues/524))
+- Center the track in the previews of similar routes. ([GH-524](https://github.com/martin-ueding/geo-activity-playground/issues/524))
+- Hide the steps and the activity name on the share picture when they are switched off in the settings. ([GH-525](https://github.com/martin-ueding/geo-activity-playground/issues/525))
+- Count stops as not moving, also in activities that contain GPS spikes. The next scan re-parses all activities from files. ([GH-529](https://github.com/martin-ueding/geo-activity-playground/issues/529))
+- Keep values of 0 for speed, cadence, power and elevation from FIT files instead of dropping them. ([GH-529](https://github.com/martin-ueding/geo-activity-playground/issues/529))
+- Include the last sample in the moving time of activities without an end trim. ([GH-529](https://github.com/martin-ueding/geo-activity-playground/issues/529))
+
 ## Version 1.56.0 — 2026-09-27
 
 Added:
 
-- Browse clusters of activities along the same route. Each cluster shows all tracks on a map and plots speed and moving time over the date. ([GH-542](https://github.com/martin-ueding/geo-activity-playground/issues/542))
+- Browse clusters of activities along the same route. Each cluster shows all tracks on a map and plots speed and moving time over the date. ([GH-524](https://github.com/martin-ueding/geo-activity-playground/issues/524))
 
 Changed:
 
@@ -28,7 +52,7 @@ Changed:
 
 Fixed:
 
-- Remove the broken markers from the segment maps. Preview maps of activities no longer show progress markers. ([GH-542](https://github.com/martin-ueding/geo-activity-playground/issues/542))
+- Remove the broken markers from the segment maps. Preview maps of activities no longer show progress markers. ([GH-524](https://github.com/martin-ueding/geo-activity-playground/issues/524))
 
 ## Version 1.55.0 — 2026-08-31
 

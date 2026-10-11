@@ -1,0 +1,89 @@
+{% extends "page.html.j2" %}
+
+{% block container %}
+<h1 class="mb-3">{{ _('Places') }}</h1>
+
+<p>
+    {{ _('Places are named locations. Starts, ends and stops of at least three minutes within 50 m of a place count as visits. Two consecutive visits within an activity form a leg.') }}
+    <a href="{{ url_for('.edit') }}">{{ _('Create and edit places') }}</a>
+</p>
+
+<div class="mb-3">
+    {% include "search_form.html.j2" %}
+</div>
+
+{% if places %}
+<h2 class="mb-3">{{ _('Map') }}</h2>
+
+{{ map_script() }}
+<div id="map-places" class="mb-3" style="height: 600px; width: 100%;"></div>
+<script type="module">
+    const places = {{ map_places | tojson }};
+    const edges = {{ map_edges | tojson }};
+    const roundTripsLabel = {{ _('round trips') | tojson }};
+    const color = "#1f77b4";
+
+    function text(content) {
+        const span = document.createElement("span");
+        span.textContent = content;
+        return span;
+    }
+
+    const map = add_map("map-places", null);
+    const maxCount = Math.max(1, ...edges.map(edge => edge.count));
+    for (const edge of edges) {
+        const [a, b] = edge.places.map(id => places[id]);
+        L.polyline([[a.latitude, a.longitude], [b.latitude, b.longitude]], {
+            color: color, weight: 1 + 9 * edge.count / maxCount, opacity: 0.7,
+        }).bindTooltip(text(`${a.name} – ${b.name}: ${edge.count}`)).addTo(map);
+    }
+
+    const markers = Object.values(places).map(place => {
+        const label = place.round_trips ? `${place.name} (${place.round_trips} ${roundTripsLabel})` : place.name;
+        return L.circleMarker([place.latitude, place.longitude], {
+            radius: 7, color: "#d62728", fillOpacity: 0.8,
+        }).bindTooltip(text(label), { direction: "right" }).addTo(map);
+    });
+    map.fitBounds(L.featureGroup(markers).getBounds(), { padding: [50, 50], maxZoom: 15 });
+</script>
+{% endif %}
+
+<h2 class="mb-3">{{ _('Origin–destination matrix') }}</h2>
+
+{% if matrix_plots %}
+<p>{{ _('Number of legs from the place in the row to the place in the column, one matrix per group of connected places.') }}</p>
+{% for plot in matrix_plots %}
+<div class="overflow-auto mb-3">
+    {{ vega_direct(plot) }}
+</div>
+{% endfor %}
+{% else %}
+<p>{{ _('No legs found.') }}</p>
+{% endif %}
+
+{% if places %}
+<h2 class="mb-3">{{ _('Activities by place') }}</h2>
+<div class="table-responsive mb-3">
+    <table class="table table-sm">
+        <thead>
+            <tr>
+                <th>{{ _('Place') }}</th>
+                <th>{{ _('Activities') }}</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for place in places %}
+            <tr>
+                <td>{{ place.name }}</td>
+                <td>
+                    <a href="{{ url_for('search.index', start_place=place.id) }}">{{ _('Starting here') }}</a> ·
+                    <a href="{{ url_for('search.index', end_place=place.id) }}">{{ _('Ending here') }}</a> ·
+                    <a href="{{ url_for('search.index', stop_place=place.id) }}">{{ _('Visiting') }}</a>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endif %}
+{% endblock %}

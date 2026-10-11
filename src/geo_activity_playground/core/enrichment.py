@@ -7,6 +7,8 @@ from collections.abc import Callable
 import numpy as np
 import pandas as pd
 
+from ..features.places.matching import match_stays
+from ..features.places.stays import detect_stays
 from .coordinates import get_distance
 from .datamodel import DB, Activity, ActivityImportConfig
 from .missing_values import some
@@ -273,9 +275,7 @@ def enrichment_distance(
             * 3600
         )
         # Division by zero causes infinity. We replace these with NaN and interpolate the values instead.
-        time_series["speed"] = time_series["speed"].replace(
-            [0, np.inf, -np.inf], np.nan
-        )
+        time_series["speed"] = time_series["speed"].replace([np.inf, -np.inf], np.nan)
         time_series.interpolate(inplace=True)
 
         changed = True
@@ -293,8 +293,9 @@ def enrichment_distance(
         speed_fall_rate > spike_acceleration_threshold
     )
     if is_spike.any():
-        time_series.loc[is_spike, "speed"] = np.nan
-        time_series["speed"] = time_series["speed"].interpolate()
+        time_series.loc[is_spike, "speed"] = (
+            time_series["speed"].mask(is_spike).interpolate().loc[is_spike]
+        )
         changed = True
 
     if "segment_id" not in time_series.columns:
@@ -319,7 +320,7 @@ def enrichment_distance(
     return changed
 
 
-@enrichment_step(version=1)
+@enrichment_step(version=2)
 def enrichment_moving_time(
     activity: Activity,
     time_series: pd.DataFrame,
@@ -332,7 +333,7 @@ def enrichment_moving_time(
         return time_diff.sum()
 
     new_moving_time = (
-        time_series.iloc[activity.index_begin or 0 : activity.index_end or -1]
+        time_series.iloc[activity.index_begin or 0 : activity.index_end]
         .groupby("segment_id")
         .apply(moving_time, include_groups=False)
         .sum()
@@ -369,6 +370,22 @@ def enrichment_copy_latlon(
         return False
 
 
+@enrichment_step(version=1)
+def enrichment_detect_stays(
+    activity: Activity,
+    time_series: pd.DataFrame,
+    config: ActivityImportConfig,
+    force: bool,
+) -> bool:
+    if force:
+        stays = detect_stays(
+            time_series.iloc[activity.index_begin or 0 : activity.index_end]
+        )
+        match_stays(stays)
+        activity.stays = stays
+    return False
+
+
 enrichments: list[Enrichment] = [
     enrichment_set_timezone,
     enrichment_normalize_time,
@@ -380,6 +397,7 @@ enrichments: list[Enrichment] = [
     enrichment_distance,
     enrichment_moving_time,
     enrichment_copy_latlon,
+    enrichment_detect_stays,
 ]
 
 

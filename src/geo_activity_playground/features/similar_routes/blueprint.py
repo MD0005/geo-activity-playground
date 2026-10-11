@@ -17,6 +17,8 @@ from .clustering import RouteCluster, cluster_routes, find_cluster, load_neighbo
 from .model import QUANTILES, RouteDistance
 
 DIRECTIONS = ["min", "max", "forward", "backward"]
+DEFAULT_DIRECTION = "max"
+SORTS = ["distance", "date"]
 MAX_RESULTS = 100
 DEFAULT_MAX_DISTANCE_M = 200.0
 DEFAULT_CLUSTER_QUANTILE = "p95"
@@ -29,9 +31,12 @@ def make_similar_routes_blueprint(config_accessor: ConfigAccessor) -> Blueprint:
     @blueprint.route("/activity/<int:id>")
     def activity(id: int) -> ResponseReturnValue:
         quantile, max_distance_m = _distance_args("p50", DEFAULT_MAX_DISTANCE_M)
-        direction = request.args.get("direction", "min")
+        direction = request.args.get("direction", DEFAULT_DIRECTION)
         if direction not in DIRECTIONS:
-            direction = "min"
+            direction = DEFAULT_DIRECTION
+        sort = request.args.get("sort", "distance")
+        if sort not in SORTS:
+            sort = "distance"
 
         num_compared = DB.session.scalar(
             sqlalchemy.select(sqlalchemy.func.count()).where(
@@ -42,7 +47,7 @@ def make_similar_routes_blueprint(config_accessor: ConfigAccessor) -> Blueprint:
         return render_template(
             "similar_routes/activity.html.j2",
             activity=get_activity_by_id(id),
-            similar=find_similar_routes(id, quantile, direction, max_distance_m),
+            similar=find_similar_routes(id, quantile, direction, max_distance_m, sort),
             quantile=quantile,
             quantiles=QUANTILES,
             direction=direction,
@@ -52,6 +57,8 @@ def make_similar_routes_blueprint(config_accessor: ConfigAccessor) -> Blueprint:
                 "forward": _("This lies on the other"),
                 "backward": _("The other lies on this"),
             },
+            sort=sort,
+            sorts={"distance": _("Closest first"), "date": _("Newest first")},
             max_distance_m=max_distance_m,
             num_compared=num_compared,
             num_others=count_activities() - 1,
@@ -205,7 +212,11 @@ def _cluster_plots(df: pd.DataFrame, config_accessor: ConfigAccessor) -> dict[st
 
 
 def find_similar_routes(
-    activity_id: int, quantile: str, direction: str, max_distance_m: float
+    activity_id: int,
+    quantile: str,
+    direction: str,
+    max_distance_m: float,
+    sort: str = "distance",
 ) -> list[tuple[Activity, float]]:
     forward = aliased(RouteDistance)
     backward = aliased(RouteDistance)
@@ -240,7 +251,7 @@ def find_similar_routes(
         query.join(Activity, Activity.id == other_id)
         .with_only_columns(Activity, distance, maintain_column_froms=True)
         .where(distance.is_not(None), distance <= max_distance_m)
-        .order_by(distance)
+        .order_by(Activity.start.desc() if sort == "date" else distance)
         .limit(MAX_RESULTS)
     ).all()
     return [(activity, distance_m) for activity, distance_m in rows]
